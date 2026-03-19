@@ -1,82 +1,136 @@
-# CoTherapy.ai Demo
+# CoTherapy.ai
 
-A working React demo of CoTherapy, an AI-powered intersession support tool for therapists.
+AI-powered intersession support tool for therapists. This is a working React demo/prototype.
 
 ## Features
 
-- **Therapist Intake**: Configure TAM (Therapeutic Alignment Model) and DSP (Dialogue Style Parameters)
-- **Post-Session Review**: AI extracts clinical moments and KTMs from session notes
-- **Pre-Session Review**: Review intersession chat excerpts and provide feedback
-- **Client Chat**: Real-time chat with tier detection (safety escalation)
+### Therapist Views
+- **My Practice** - Configure TAM (Therapeutic Alignment Model) and DSP (Dialogue Style Parameters)
+- **Client Setup** - Onboard clients, manage dyad states (Active, Paused, Archived)
+- **Post-Session** - AI extracts clinical moments and KTMs from session notes
+- **Pre-Session** - Review intersession chat excerpts, view config history
 
-## Quick Start
+### Client View
+- **Chat** - Real-time AI chat with 3-tier safety detection and escalation
+
+### Core Systems
+- **Dyad State Machine** - Tracks therapist-client relationship lifecycle (Invited → Pending Config → Active → Paused → Archived)
+- **Policy Pack Versioning** - Point-in-time snapshots of configuration for audit/compliance
+- **HITL Feedback** - Human-in-the-loop feedback on AI responses
+
+## Setup
+
+### Prerequisites
+- Node.js 18+
+- npm
+
+### Installation
 
 ```bash
+# Clone the repo
+git clone https://github.com/Adamb13/cotherapy-v2-app.git
+cd cotherapy-v2-app
+
 # Install dependencies
 npm install
+
+# Copy environment file
+cp .env.example .env
+
+# Add your credentials to .env (see Environment Variables below)
 
 # Start development server
 npm run dev
 ```
 
-Then open http://localhost:5173
+Open http://localhost:5173
 
-## Database (Supabase)
+### Environment Variables
 
-This demo connects to your existing Supabase project. The `.env` file is pre-configured with your credentials.
+Create a `.env` file with:
 
-If you need to set up a new database:
+```bash
+# Supabase (get from supabase.com dashboard → Settings → API)
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+
+# Anthropic (get from console.anthropic.com)
+VITE_ANTHROPIC_API_KEY=sk-ant-your-key
+```
+
+### Database Setup (New Projects Only)
+
+If setting up a fresh Supabase project:
+
 1. Create a project at https://supabase.com
 2. Run the schema SQL from `CoTherapy_Schema_2025-01-11.sql`
 3. Run the sample data SQL from `CoTherapy_SampleData_2025-01-11.sql`
 4. Update `.env` with your project URL and anon key
 
-## Demo Mode
+## Development Workflow
 
-The app runs in demo mode by default, which:
-- Uses hardcoded therapist/client IDs from sample data
-- Bypasses authentication
-- Generates mock AI responses (no Claude API needed)
+### Branch Strategy
 
-To add real Claude AI responses, you would add:
-```
-VITE_ANTHROPIC_API_KEY=your-key
-```
-And modify `src/lib/ai.js` to use the real Anthropic SDK.
-
-## Deploy to Vercel
+**Do not push directly to `main`.** Use feature branches and pull requests:
 
 ```bash
-# Build
-npm run build
+# Create a feature branch
+git checkout -b feature/your-feature-name
 
-# The 'dist' folder contains your static site
-# Deploy to Vercel:
-npx vercel
+# Make changes and commit
+git add .
+git commit -m "Description of changes"
+
+# Push your branch
+git push -u origin feature/your-feature-name
+
+# Create a PR on GitHub to merge into main
 ```
 
-Or connect your Git repo to Vercel for automatic deployments.
+### Building for Production
 
-## Flows
+```bash
+npm run build
+```
 
-### Therapist Flow
-1. **Intake** → Configure modality, DSP preferences, boundaries
-2. **Post-Session** → Paste notes → Review AI-extracted moments → Approve KTMs → Set integration direction
-3. **Pre-Session** → Review chat excerpts → Provide DSP feedback
+The `dist` folder contains the static site.
 
-### Client Flow
-1. **Chat** → Message the AI → Tier detection handles safety escalation
+## Deployment
+
+The repo is connected to Vercel for automatic deployments. Pushing to `main` triggers a production deploy.
 
 ## Tech Stack
 
 - React 18
-- Vite
-- Supabase (PostgreSQL + Auth)
-- No build-time TypeScript (plain JS for simplicity)
+- Vite 6
+- Supabase (PostgreSQL)
+- Claude Sonnet 4 (Anthropic API)
+- Plain JavaScript (no TypeScript)
+
+## Project Structure
+
+```
+src/
+├── App.jsx              # Main app with routing and nav
+├── lib/
+│   ├── supabase.js      # Supabase client
+│   ├── db.js            # Database functions, dyad state machine
+│   └── ai.js            # Claude API integration
+├── pages/
+│   ├── TherapistSettings.jsx  # My Practice - TAM/DSP config
+│   ├── ClientOnboarding.jsx   # Client list and onboarding
+│   ├── PostSession.jsx        # Session review and KTM generation
+│   ├── PreSession.jsx         # Chat review and config history
+│   └── ClientChat.jsx         # Client-facing chat interface
+└── index.css            # Global styles
+```
+
+## Demo Access
+
+The demo is password-protected. Contact the team for access credentials.
 
 ## Notes
 
-- This is a demo/prototype, not production code
-- AI responses are mocked - add Anthropic API for real responses
-- Auth is bypassed in demo mode
-- Row-Level Security is configured in the database schema
+- This is a prototype, not production code
+- RLS (Row-Level Security) is configured in the database schema
+- The 3-tier safety system escalates based on detected content
