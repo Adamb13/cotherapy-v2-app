@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { getTherapist, getClient } from './lib/db'
-import Intake from './pages/Intake'
+import { getTherapist, getClient, getAllClientsForTherapist } from './lib/db'
+import { DEMO_THERAPIST_ID } from './lib/supabase'
+import TherapistSettings from './pages/TherapistSettings'
+import ClientOnboarding from './pages/ClientOnboarding'
 import PostSession from './pages/PostSession'
 import PreSession from './pages/PreSession'
 import ClientChat from './pages/ClientChat'
@@ -12,9 +14,11 @@ function App() {
   const [passwordInput, setPasswordInput] = useState('')
   const [passwordError, setPasswordError] = useState(false)
   const [userType, setUserType] = useState('therapist')
-  const [currentView, setCurrentView] = useState('intake')
+  const [currentView, setCurrentView] = useState('settings')
   const [therapist, setTherapist] = useState(null)
   const [client, setClient] = useState(null)
+  const [clients, setClients] = useState([])
+  const [showClientSelector, setShowClientSelector] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -42,17 +46,25 @@ function App() {
 
   async function loadData() {
     try {
-      const [t, c] = await Promise.all([
+      const [t, c, allClients] = await Promise.all([
         getTherapist(),
-        getClient()
+        getClient(),
+        getAllClientsForTherapist(DEMO_THERAPIST_ID)
       ])
       setTherapist(t)
       setClient(c)
+      setClients(allClients.filter(cl => cl.is_active))
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  // Reload clients when returning from client onboarding
+  async function reloadClients() {
+    const allClients = await getAllClientsForTherapist(DEMO_THERAPIST_ID)
+    setClients(allClients.filter(cl => cl.is_active))
   }
 
   // Password screen
@@ -130,19 +142,25 @@ function App() {
         <div className="nav-links">
           {userType === 'therapist' ? (
             <>
-              <button 
-                className={`nav-link ${currentView === 'intake' ? 'active' : ''}`}
-                onClick={() => setCurrentView('intake')}
+              <button
+                className={`nav-link ${currentView === 'settings' ? 'active' : ''}`}
+                onClick={() => setCurrentView('settings')}
               >
-                <span>⚙</span> Intake
+                <span>⚙</span> My Practice
               </button>
-              <button 
+              <button
+                className={`nav-link ${currentView === 'client-onboarding' ? 'active' : ''}`}
+                onClick={() => setCurrentView('client-onboarding')}
+              >
+                <span>👤</span> Client Setup
+              </button>
+              <button
                 className={`nav-link ${currentView === 'post-session' ? 'active' : ''}`}
                 onClick={() => setCurrentView('post-session')}
               >
                 <span>✎</span> Post-Session
               </button>
-              <button 
+              <button
                 className={`nav-link ${currentView === 'pre-session' ? 'active' : ''}`}
                 onClick={() => setCurrentView('pre-session')}
               >
@@ -157,22 +175,96 @@ function App() {
         </div>
         
         <div className="nav-right">
+          {/* Client Selector (Therapist view only) */}
+          {userType === 'therapist' && clients.length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowClientSelector(!showClientSelector)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 12px',
+                  background: 'var(--sand)',
+                  border: '1px solid var(--sand-dark)',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 13
+                }}
+              >
+                <span>👤</span>
+                <span>{client?.display_name || 'Select Client'}</span>
+                <span style={{ opacity: 0.5 }}>▼</span>
+              </button>
+              {showClientSelector && (
+                <>
+                  <div
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
+                    onClick={() => setShowClientSelector(false)}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: 4,
+                    background: 'white',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                    border: '1px solid var(--sand-dark)',
+                    minWidth: 200,
+                    zIndex: 100,
+                    overflow: 'hidden'
+                  }}>
+                    {clients.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setClient(c)
+                          setShowClientSelector(false)
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          width: '100%',
+                          padding: '10px 14px',
+                          background: c.id === client?.id ? 'var(--sage-light)' : 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          textAlign: 'left',
+                          borderBottom: '1px solid var(--sand)'
+                        }}
+                      >
+                        <span>{c.id === client?.id ? '✓' : '  '}</span>
+                        {c.display_name || 'Unnamed'}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="view-toggle">
-            <button 
+            <button
               className={userType === 'therapist' ? 'active' : ''}
-              onClick={() => { setUserType('therapist'); setCurrentView('intake'); }}
+              onClick={() => { setUserType('therapist'); setCurrentView('settings'); }}
             >
-              Therapist View
+              Therapist
             </button>
-            <button 
+            <button
               className={userType === 'client' ? 'active' : ''}
               onClick={() => setUserType('client')}
             >
-              Client View
+              Client
             </button>
           </div>
-          <div className="avatar">
-            {userType === 'therapist' ? 'DR' : 'CL'}
+          <div className="avatar" title={userType === 'therapist' ? therapist?.full_name : client?.display_name} style={{ fontSize: userType === 'therapist' ? 11 : 14 }}>
+            {userType === 'therapist'
+              ? ('Dr. ' + (therapist?.full_name?.split(' ').pop()?.[0] || 'T'))
+              : (client?.display_name?.[0]?.toUpperCase() || 'CL')
+            }
           </div>
         </div>
       </nav>
@@ -183,24 +275,37 @@ function App() {
           <ClientChat client={client} therapist={therapist} />
         ) : (
           <>
-            {currentView === 'intake' && (
-              <Intake 
-                therapist={therapist} 
+            {currentView === 'settings' && (
+              <TherapistSettings
+                therapist={therapist}
                 onUpdate={setTherapist}
+                onNext={() => setCurrentView('client-onboarding')}
+              />
+            )}
+            {currentView === 'client-onboarding' && (
+              <ClientOnboarding
+                therapist={therapist}
+                client={client}
+                onClientUpdate={(updatedClient) => {
+                  setClient(updatedClient)
+                  reloadClients()
+                }}
                 onNext={() => setCurrentView('post-session')}
               />
             )}
             {currentView === 'post-session' && (
-              <PostSession 
+              <PostSession
                 therapist={therapist}
                 client={client}
+                onClientUpdate={setClient}
                 onNext={() => setCurrentView('pre-session')}
               />
             )}
             {currentView === 'pre-session' && (
-              <PreSession 
+              <PreSession
                 therapist={therapist}
                 client={client}
+                onClientUpdate={setClient}
               />
             )}
           </>

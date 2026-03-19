@@ -6,20 +6,50 @@ const anthropic = new Anthropic({
   dangerouslyAllowBrowser: true
 })
 
-// Tier detection patterns (from PRD v1.4)
-const TIER_3_PATTERNS = [
-  /\b(kill myself|end my life|suicide|want to die|better off dead)\b/i,
-  /\b(hurt myself|self.?harm|cutting myself|overdose)\b/i,
-  /\b(can't go on|no reason to live|goodbye|final goodbye)\b/i,
-  /\b(have a plan|know how i'll|pills ready|gun|bridge)\b/i,
+// Safety Router: Routes A-E (from PRD v2.1)
+// Route A: Allow — full engagement within Policy Pack + TIM level
+// Route B: Soften — containment/resourcing response, no clinical work
+// Route C: Clarify — bounded clarifying question before proceeding
+// Route D: Block + Redirect — decline topic, redirect to approved scope
+// Route E: Escalate — crisis protocol with therapist alert and post-crisis mode
+
+const ROUTE_E_PATTERNS = [
+  // Active suicidal ideation with plan/intent
+  /\b(kill myself|end my life|want to die|going to die)\b/i,
+  /\b(have a plan|know how i'll|pills ready|gun|bridge|method)\b/i,
+  /\b(final goodbye|end it all|no reason to live|can't go on)\b/i,
+  // Active self-harm
+  /\b(hurting myself|cutting myself|going to hurt myself)\b/i,
+  // Homicidal ideation
+  /\b(kill (someone|him|her|them)|hurt (someone|him|her|them))\b/i,
 ]
 
-const TIER_2_PATTERNS = [
+const ROUTE_B_PATTERNS = [
+  // Trauma content
   /\b(trauma|flashback|triggered|traumatic)\b/i,
+  /\b(abuse|abused|abusive|assault)\b/i,
+  // Dissociation
   /\b(dissociat|detached|not in my body|watching myself)\b/i,
   /\b(shutting down|can't feel anything|numb|frozen)\b/i,
-  /\b(abuse|abused|abusive)\b/i,
+  // Passive SI (without plan)
   /\b(suicidal thoughts?|thinking about death|don't want to be here)\b/i,
+  /\b(wish i wasn't here|better off without me)\b/i,
+]
+
+const ROUTE_D_PATTERNS = [
+  // Off-limits professional advice
+  /\b(legal advice|sue|lawsuit|court)\b/i,
+  /\b(medication (dose|dosing|increase|change))\b/i,
+  /\b(diagnos(e|is) me|what's wrong with me|do i have)\b/i,
+  // Asking AI to be therapist
+  /\b(you'?re my (real )?therapist|replace my therapist)\b/i,
+]
+
+const ROUTE_C_PATTERNS = [
+  // Ambiguous statements that need clarification
+  /\b(i don't know (if|what))\b/i,
+  /\b(maybe i should(n't)?)\b/i,
+  /\b(not sure (if|what|how))\b/i,
 ]
 
 const FALSE_POSITIVE_PATTERNS = [
@@ -32,41 +62,102 @@ const FALSE_POSITIVE_PATTERNS = [
   /dying of embarrassment/i,
   /kill it/i,
   /killed it/i,
+  /killing it/i,
 ]
 
-export function detectTier(message) {
+// Check if message matches avoided topics
+function matchesAvoidedTopics(message, avoidTopics = []) {
+  const lowerMessage = message.toLowerCase()
+  return avoidTopics.some(topic => lowerMessage.includes(topic.toLowerCase()))
+}
+
+export function detectRoute(message, client = null) {
   // Check false positives first
   for (const pattern of FALSE_POSITIVE_PATTERNS) {
     if (pattern.test(message)) {
-      return { tier: 'TIER_1', reason: null }
+      return { route: 'A', tier: 'TIER_1', reason: null }
     }
   }
-  
-  // Check Tier-3 (crisis)
-  for (const pattern of TIER_3_PATTERNS) {
+
+  // Route E: Crisis — highest priority
+  for (const pattern of ROUTE_E_PATTERNS) {
     if (pattern.test(message)) {
-      return { 
-        tier: 'TIER_3', 
-        reason: 'Crisis indicators detected' 
+      return {
+        route: 'E',
+        tier: 'TIER_3',
+        reason: 'Crisis indicators detected - escalation required'
       }
     }
   }
-  
-  // Check Tier-2 (contain & resource)
-  for (const pattern of TIER_2_PATTERNS) {
+
+  // Route D: Block — check avoided topics and off-limits requests
+  const avoidTopics = [
+    ...(client?.dsp_adjustments?.avoid_topics || [])
+  ]
+  if (matchesAvoidedTopics(message, avoidTopics)) {
+    return {
+      route: 'D',
+      tier: 'TIER_1',
+      reason: 'Topic flagged for avoidance - redirecting'
+    }
+  }
+
+  for (const pattern of ROUTE_D_PATTERNS) {
     if (pattern.test(message)) {
-      return { 
-        tier: 'TIER_2', 
-        reason: 'Sensitive topic - containment approach' 
+      return {
+        route: 'D',
+        tier: 'TIER_1',
+        reason: 'Out of scope request - redirecting'
       }
     }
   }
-  
-  return { tier: 'TIER_1', reason: null }
+
+  // Route B: Soften — sensitive content
+  for (const pattern of ROUTE_B_PATTERNS) {
+    if (pattern.test(message)) {
+      return {
+        route: 'B',
+        tier: 'TIER_2',
+        reason: 'Sensitive topic - containment approach'
+      }
+    }
+  }
+
+  // Route C: Clarify — ambiguous statements (low priority)
+  for (const pattern of ROUTE_C_PATTERNS) {
+    if (pattern.test(message)) {
+      return {
+        route: 'C',
+        tier: 'TIER_1',
+        reason: 'Clarification needed'
+      }
+    }
+  }
+
+  // Route A: Allow — default
+  return { route: 'A', tier: 'TIER_1', reason: null }
 }
 
-// Build system prompt based on therapist config and tier
-function buildSystemPrompt(therapist, tier, ktms = []) {
+// Legacy function for backward compatibility
+export function detectTier(message) {
+  const { tier, reason } = detectRoute(message)
+  return { tier, reason }
+}
+
+// Build system prompt based on therapist config, client config, and tier
+function buildSystemPrompt(therapist, tier, ktms = [], client = null) {
+  // Merge therapist + client boundaries
+  const therapistAvoid = therapist.avoid_topics || []
+  const clientAvoid = client?.dsp_adjustments?.avoid_topics || []
+  const allAvoidTopics = [...new Set([...therapistAvoid, ...clientAvoid])]
+
+  const therapistContra = therapist.contraindications || ''
+  const clientContra = client?.dsp_adjustments?.contraindications || ''
+  const allContraindications = [therapistContra, clientContra].filter(Boolean).join('\n')
+
+  // Use client modality override if set, otherwise therapist's
+  const modality = client?.dsp_adjustments?.modality_override || therapist.modality
+
   let prompt = `You are an AI therapeutic support assistant working under the supervision of ${therapist.full_name} (${therapist.credentials || 'therapist'}). You provide intersession support between therapy sessions.
 
 ## CRITICAL CONSTRAINTS
@@ -76,9 +167,10 @@ function buildSystemPrompt(therapist, tier, ktms = []) {
 - Use natural, conversational prose only.
 
 ## Therapist Configuration
-- Modality: ${therapist.modality}
-- Approach: ${therapist.approach_description || 'Standard ' + therapist.modality + ' approach'}
-${therapist.avoid_topics?.length ? `- Topics to avoid: ${therapist.avoid_topics.join(', ')}` : ''}
+- Modality: ${modality}
+- Approach: ${therapist.approach_description || 'Standard ' + modality + ' approach'}
+${allAvoidTopics.length ? `- Topics to AVOID (redirect away from these): ${allAvoidTopics.join(', ')}` : ''}
+${allContraindications ? `\n## Clinical Considerations\n${allContraindications}` : ''}
 
 ## Dialogue Style
 - Directiveness: ${therapist.dsp_directiveness === 'directive' ? 'More directive, offering suggestions' : 'More exploratory, asking questions'}
@@ -91,20 +183,41 @@ ${therapist.avoid_topics?.length ? `- Topics to avoid: ${therapist.avoid_topics.
     prompt += `\n## Key Therapeutic Messages (use when relevant)\n${ktms.map(k => `- "${k.content}"`).join('\n')}\n`
   }
 
-  // Tier-specific instructions
-  if (tier === 'TIER_3') {
-    prompt += `
-## TIER-3 CRISIS PROTOCOL - ACTIVE
+  // Route-specific instructions (passed via route parameter)
+  return prompt
+}
+
+// Add route-specific instructions to prompt
+function addRouteInstructions(basePrompt, route, modality) {
+  let prompt = basePrompt
+
+  switch (route) {
+    case 'E':
+      prompt += `
+## ROUTE E: CRISIS PROTOCOL - ACTIVE
 You MUST:
-1. Acknowledge their pain briefly
+1. Acknowledge their pain briefly and with care
 2. Provide crisis resources: "Please reach out to the 988 Suicide & Crisis Lifeline by calling or texting 988."
 3. State: "Your therapist has been notified and will follow up with you."
 4. Do NOT continue therapeutic conversation after providing resources
 5. Keep response brief and focused on safety
 `
-  } else if (tier === 'TIER_2') {
-    prompt += `
-## TIER-2 CONTAIN & RESOURCE MODE - ACTIVE
+      break
+
+    case 'D':
+      prompt += `
+## ROUTE D: REDIRECT MODE - ACTIVE
+The topic is outside your scope. You MUST:
+1. Gently acknowledge the request
+2. Explain you can't engage with this specific topic
+3. Redirect to what you CAN help with (session insights, coping strategies)
+4. Example: "I can't provide guidance on that, but I can help you explore what came up in your last session."
+`
+      break
+
+    case 'B':
+      prompt += `
+## ROUTE B: CONTAIN & RESOURCE MODE - ACTIVE
 This topic requires therapist presence for deeper work. You MUST:
 1. Acknowledge and validate briefly
 2. Offer grounding: "Let's take a moment to ground. Feel your feet on the floor."
@@ -112,11 +225,24 @@ This topic requires therapist presence for deeper work. You MUST:
 4. Do NOT do trauma processing or deep exploration
 5. Do NOT ask probing questions about the sensitive content
 `
-  } else {
-    prompt += `
-## TIER-1 FULL ENGAGEMENT MODE
+      break
+
+    case 'C':
+      prompt += `
+## ROUTE C: CLARIFY MODE - ACTIVE
+The message is ambiguous. You MUST:
+1. Ask ONE bounded clarifying question
+2. Keep it simple and specific
+3. Don't assume or interpret
+4. Example: "When you say you're not sure, are you referring to the situation at work or something else?"
+`
+      break
+
+    default: // Route A
+      prompt += `
+## ROUTE A: FULL ENGAGEMENT MODE
 You may:
-- Use ${therapist.modality}-appropriate techniques and language
+- Use ${modality}-appropriate techniques and language
 - Reflect, explore, and gently challenge
 - Reinforce session insights using KTMs when relevant
 - Ask one exploratory question per response
@@ -124,9 +250,9 @@ You may:
   }
 
   // Modality-specific guidance
-  if (therapist.modality === 'IFS') {
+  if (modality === 'IFS') {
     prompt += `\n## IFS Language\n- Use parts language: "parts," "protectors," "Self-energy"\n- Ask about parts with curiosity\n`
-  } else if (therapist.modality === 'CBT') {
+  } else if (modality === 'CBT') {
     prompt += `\n## CBT Language\n- Focus on thoughts, feelings, behaviors connection\n- May reference thought patterns\n`
   }
 
@@ -134,10 +260,14 @@ You may:
 }
 
 // Generate real response using Claude API
-export async function generateResponse(userMessage, therapist, conversationHistory = [], ktms = []) {
-  const { tier, reason } = detectTier(userMessage)
-  
-  const systemPrompt = buildSystemPrompt(therapist, tier, ktms)
+export async function generateResponse(userMessage, therapist, conversationHistory = [], ktms = [], client = null) {
+  const { route, tier, reason } = detectRoute(userMessage, client)
+
+  // Use client modality override if set
+  const modality = client?.dsp_adjustments?.modality_override || therapist.modality
+
+  let systemPrompt = buildSystemPrompt(therapist, tier, ktms, client)
+  systemPrompt = addRouteInstructions(systemPrompt, route, modality)
   
   // Build messages array
   const messages = []
@@ -171,17 +301,19 @@ export async function generateResponse(userMessage, therapist, conversationHisto
     
     return {
       content,
+      route,
       tier,
       tierReason: reason,
-      flagged: tier !== 'TIER_1'
+      flagged: route !== 'A'
     }
   } catch (error) {
     console.error('Claude API error:', error)
-    
+
     // Fallback for errors
-    if (tier === 'TIER_3') {
+    if (route === 'E') {
       return {
         content: "I'm concerned about what you're sharing. Please reach out to the 988 Suicide & Crisis Lifeline by calling or texting 988. Your therapist has been notified.",
+        route: 'E',
         tier: 'TIER_3',
         tierReason: 'Crisis protocol - API fallback',
         flagged: true
@@ -190,6 +322,7 @@ export async function generateResponse(userMessage, therapist, conversationHisto
     
     return {
       content: "I'm having trouble responding right now. Please try again in a moment.",
+      route: 'A',
       tier: 'TIER_1',
       tierReason: null,
       flagged: false
@@ -215,10 +348,13 @@ For each moment, provide:
 1. category: One of the categories above (uppercase with underscore)
 2. content: 1-2 sentence description of the moment
 3. ai_significance: 1-5, where 5 is most clinically significant
+4. confidence: "high", "medium", or "low" - how confident you are this moment is clinically relevant
+
+IMPORTANT: Even if the notes are brief or unclear, try to extract SOMETHING. Use "low" confidence for uncertain extractions. Only return an empty array if there is truly nothing clinical mentioned.
 
 Return ONLY a JSON array, no other text:
 [
-  {"category": "INSIGHT", "content": "Client recognized pattern of...", "ai_significance": 4},
+  {"category": "INSIGHT", "content": "Client recognized pattern of...", "ai_significance": 4, "confidence": "high"},
   ...
 ]`
 
@@ -257,24 +393,23 @@ export async function generateKTMsFromMoments(moments, therapist) {
   
   const systemPrompt = `You are helping a ${therapist.modality} therapist create Key Therapeutic Messages (KTMs) for intersession reinforcement.
 
-KTMs are therapist-approved messages the AI can use to reinforce session insights. They should:
-- Be in second person ("You noticed..." not "The client noticed...")
-- Sound like something the therapist might say
-- Reinforce insights without pushing further exploration
-- Be warm but not saccharine
+KTMs are therapist-approved messages that capture key insights from the session. They should:
+- Be in third person, as in clinical session notes ("Client recognized...", "Client expressed...")
+- Capture the therapeutic insight or breakthrough concisely
+- Be written as the therapist would document it
 - Be 1-2 sentences max
 
 DSP style preferences:
-- Warmth: ${therapist.dsp_warmth === 'warm' ? 'Warm and empathic' : 'Grounded and direct'}
-- Directiveness: ${therapist.dsp_directiveness === 'directive' ? 'More affirming' : 'More reflective'}
+- Warmth: ${therapist.dsp_warmth === 'warm' ? 'Warm and empathic tone' : 'Grounded and direct tone'}
+- Directiveness: ${therapist.dsp_directiveness === 'directive' ? 'Focus on concrete realizations' : 'Focus on exploratory insights'}
 
 Return ONLY a JSON array, no other text:
 [
-  {"content": "You noticed that...", "ai_emphasis": 4},
+  {"content": "Client recognized that...", "ai_emphasis": 4},
   ...
 ]
 
-ai_emphasis is 1-5, where 5 means reinforce frequently.`
+ai_emphasis is 1-5, where 5 means most clinically significant.`
 
   try {
     const response = await anthropic.messages.create({
@@ -305,29 +440,31 @@ ai_emphasis is 1-5, where 5 means reinforce frequently.`
 }
 
 // Keep mock function as fallback
-export function generateMockResponse(userMessage, therapist) {
-  const { tier, reason } = detectTier(userMessage)
-  
-  const TIER_1_RESPONSES = [
-    "That's an interesting observation. What do you notice when you sit with that feeling?",
-    "It sounds like you're becoming more aware of that pattern. How does it feel to notice it?",
-    "That takes real courage to acknowledge. What feels different about recognizing it now?",
-  ]
-  
-  const TIER_2_RESPONSES = [
-    "That sounds like a lot came up. Let's take a moment to ground - feel your feet on the floor. This would be good to bring to your next session.",
-  ]
-  
-  const TIER_3_RESPONSE = "I'm concerned about what you're sharing. Please reach out to the 988 Suicide & Crisis Lifeline by calling or texting 988. Your therapist has been notified."
-  
-  let content
-  if (tier === 'TIER_3') {
-    content = TIER_3_RESPONSE
-  } else if (tier === 'TIER_2') {
-    content = TIER_2_RESPONSES[0]
-  } else {
-    content = TIER_1_RESPONSES[Math.floor(Math.random() * TIER_1_RESPONSES.length)]
+export function generateMockResponse(userMessage, therapist, client = null) {
+  const { route, tier, reason } = detectRoute(userMessage, client)
+
+  const ROUTE_RESPONSES = {
+    A: [
+      "That's an interesting observation. What do you notice when you sit with that feeling?",
+      "It sounds like you're becoming more aware of that pattern. How does it feel to notice it?",
+      "That takes real courage to acknowledge. What feels different about recognizing it now?",
+    ],
+    B: [
+      "That sounds like a lot came up. Let's take a moment to ground - feel your feet on the floor. This would be good to bring to your next session.",
+    ],
+    C: [
+      "I want to make sure I understand. Can you tell me a bit more about what you mean?",
+    ],
+    D: [
+      "I appreciate you sharing that with me. That's something best discussed directly with your therapist, but I can help you explore what's been on your mind lately.",
+    ],
+    E: [
+      "I'm concerned about what you're sharing. Please reach out to the 988 Suicide & Crisis Lifeline by calling or texting 988. Your therapist has been notified.",
+    ]
   }
-  
-  return { content, tier, tierReason: reason, flagged: tier !== 'TIER_1' }
+
+  const responses = ROUTE_RESPONSES[route] || ROUTE_RESPONSES.A
+  const content = responses[Math.floor(Math.random() * responses.length)]
+
+  return { content, route, tier, tierReason: reason, flagged: route !== 'A' }
 }

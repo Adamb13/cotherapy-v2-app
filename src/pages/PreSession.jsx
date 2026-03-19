@@ -1,13 +1,47 @@
 import { useState, useEffect } from 'react'
-import { getRecentMessagesForReview, getFlaggedMessages, getKTMsForClient, updateMessage, saveDSPFeedback } from '../lib/db'
+import {
+  getRecentMessagesForReview,
+  getFlaggedMessages,
+  getKTMsForClient,
+  updateMessage,
+  saveDSPFeedback,
+  clearPostCrisisMode,
+  getDyadStatus,
+  DYAD_STATES,
+  DYAD_STATE_INFO,
+  getAvailableDyadTransitions,
+  transitionDyadStatus,
+  pauseDyad,
+  resumeDyad,
+  activateDyad,
+  terminateDyad,
+  getPolicyPackHistory,
+  POLICY_PACK_TYPES
+} from '../lib/db'
 import { DEMO_THERAPIST_ID, DEMO_CLIENT_ID } from '../lib/supabase'
 
-export default function PreSession({ therapist, client }) {
+// Reason codes for negative feedback (from PRD HITL spec)
+const FEEDBACK_REASONS = [
+  { code: 'too_directive', label: 'Too directive / not exploratory enough' },
+  { code: 'missed_emotion', label: 'Missed emotional cue' },
+  { code: 'wrong_tone', label: 'Wrong tone (too warm or too cold)' },
+  { code: 'should_contain', label: 'Should have contained, not explored' },
+  { code: 'missed_ktm', label: 'Missed KTM reinforcement opportunity' },
+  { code: 'off_modality', label: 'Off-modality language or technique' },
+  { code: 'other', label: 'Other' }
+]
+
+export default function PreSession({ therapist, client, onClientUpdate }) {
   const [tab, setTab] = useState('summary')
   const [messages, setMessages] = useState([])
   const [flaggedMessages, setFlaggedMessages] = useState([])
   const [ktms, setKtms] = useState([])
   const [loading, setLoading] = useState(true)
+  const [clearingCrisis, setClearingCrisis] = useState(false)
+
+  // Dyad state machine
+  const [dyadTransitioning, setDyadTransitioning] = useState(false)
+  const [showDyadMenu, setShowDyadMenu] = useState(false)
   
   // DSP Feedback state - 6 dimensions
   const [dspFeedback, setDspFeedback] = useState({
@@ -26,6 +60,7 @@ export default function PreSession({ therapist, client }) {
   const [reviewedExchanges, setReviewedExchanges] = useState({})
   const [feedbackOpen, setFeedbackOpen] = useState(null)
   const [exchangeFeedback, setExchangeFeedback] = useState({})
+  const [selectedReasons, setSelectedReasons] = useState({}) // { exchangeIndex: ['reason_code', ...] }
 
   useEffect(() => {
     loadData()
@@ -70,22 +105,49 @@ export default function PreSession({ therapist, client }) {
 
   // Submit feedback for a specific exchange
   async function handleSubmitExchangeFeedback(exchange, index) {
-    const feedback = exchangeFeedback[index]
-    if (!feedback?.trim()) return
-    
+    const reasons = selectedReasons[index] || []
+    const feedback = exchangeFeedback[index] || ''
+
+    // Require at least one reason code
+    if (reasons.length === 0) {
+      alert('Please select at least one reason for the feedback.')
+      return
+    }
+
+    // Store reasons + optional comment as JSON in therapist_feedback field
+    const feedbackData = JSON.stringify({
+      reasons: reasons,
+      comment: feedback || null,
+      timestamp: new Date().toISOString()
+    })
+
     try {
       if (exchange.ai?.id) {
-        await updateMessage(exchange.ai.id, { 
-          review_status: 'feedback',
-          therapist_feedback: feedback,
+        await updateMessage(exchange.ai.id, {
+          review_status: 'needs_improvement',
+          therapist_feedback: feedbackData,
           flagged_for_review: false
         })
       }
-      setReviewedExchanges(prev => ({ ...prev, [index]: 'feedback' }))
+      setReviewedExchanges(prev => ({ ...prev, [index]: 'needs_work' }))
       setFeedbackOpen(null)
+      setSelectedReasons(prev => ({ ...prev, [index]: [] }))
+      setExchangeFeedback(prev => ({ ...prev, [index]: '' }))
     } catch (error) {
       console.error('Error submitting feedback:', error)
     }
+  }
+
+  // Toggle reason code selection
+  function toggleReason(index, reasonCode) {
+    setSelectedReasons(prev => {
+      const current = prev[index] || []
+      if (current.includes(reasonCode)) {
+        return { ...prev, [index]: current.filter(r => r !== reasonCode) }
+      } else {
+        return { ...prev, [index]: [...current, reasonCode] }
+      }
+    })
   }
 
   // Submit overall DSP feedback
@@ -119,6 +181,68 @@ export default function PreSession({ therapist, client }) {
   // Helper to set a feedback dimension
   function setFeedbackDimension(dimension, value) {
     setDspFeedback(prev => ({ ...prev, [dimension]: value }))
+  }
+
+  // Dyad state transitions
+  const currentDyadStatus = getDyadStatus(client)
+  const dyadInfo = DYAD_STATE_INFO[currentDyadStatus]
+  const availableTransitions = getAvailableDyadTransitions(currentDyadStatus)
+
+  async function handleDyadTransition(newStatus) {
+    if (!client?.id) return
+
+    setDyadTransitioning(true)
+    setShowDyadMenu(false)
+    try {
+      let updated
+      switch (newStatus) {
+        case DYAD_STATES.PAUSED:
+          updated = await pauseDyad(client.id, 'Paused by therapist')
+          break
+        case DYAD_STATES.ACTIVE:
+          if (currentDyadStatus === DYAD_STATES.PAUSED) {
+            updated = await resumeDyad(client.id)
+          } else {
+            updated = await activateDyad(client.id)
+          }
+          break
+        case DYAD_STATES.TERMINATED:
+          if (!confirm('Are you sure you want to terminate this client relationship? This cannot be undone.')) {
+            setDyadTransitioning(false)
+            return
+          }
+          updated = await terminateDyad(client.id)
+          break
+        default:
+          updated = await transitionDyadStatus(client.id, newStatus)
+      }
+      if (onClientUpdate) {
+        onClientUpdate(updated)
+      }
+    } catch (error) {
+      console.error('Error transitioning dyad:', error)
+      alert('Error updating client status: ' + error.message)
+    } finally {
+      setDyadTransitioning(false)
+    }
+  }
+
+  // Clear post-crisis mode
+  async function handleClearCrisis() {
+    if (!client?.id) return
+
+    setClearingCrisis(true)
+    try {
+      const updated = await clearPostCrisisMode(client.id)
+      if (onClientUpdate) {
+        onClientUpdate(updated)
+      }
+    } catch (error) {
+      console.error('Error clearing crisis mode:', error)
+      alert('Error clearing crisis mode. Please try again.')
+    } finally {
+      setClearingCrisis(false)
+    }
   }
 
   // Group messages into exchanges (client + AI response pairs)
@@ -169,6 +293,37 @@ export default function PreSession({ therapist, client }) {
 
   return (
     <div className="container wide">
+      {/* Post-Crisis Alert */}
+      {client?.dsp_adjustments?.is_post_crisis && (
+        <div className="card" style={{
+          padding: 16,
+          marginBottom: 24,
+          background: '#FFF3E0',
+          border: '2px solid #FF9800'
+        }}>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-12">
+              <span style={{ fontSize: 24 }}>🚨</span>
+              <div>
+                <div style={{ fontWeight: 600, color: '#E65100' }}>Crisis Protocol Triggered</div>
+                <div style={{ fontSize: 13, color: '#BF360C' }}>
+                  Client triggered safety escalation on {new Date(client.dsp_adjustments.post_crisis_at || Date.now()).toLocaleDateString()}.
+                  Chat is locked until you clear this.
+                </div>
+              </div>
+            </div>
+            <button
+              className="btn primary"
+              onClick={handleClearCrisis}
+              disabled={clearingCrisis}
+              style={{ background: '#E65100' }}
+            >
+              {clearingCrisis ? 'Clearing...' : 'Clear & Restore Chat'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-32">
         <div>
           <h2>Pre-Session Review</h2>
@@ -176,28 +331,137 @@ export default function PreSession({ therapist, client }) {
             <strong>{client?.display_name}</strong> · Last 7 days
           </div>
         </div>
-        <span className="badge success">Next Session: Tomorrow 2pm</span>
+        <div className="flex items-center gap-16">
+          {/* Dyad Status with dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowDyadMenu(!showDyadMenu)}
+              disabled={dyadTransitioning || currentDyadStatus === DYAD_STATES.TERMINATED}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 16px',
+                background: dyadInfo?.color + '15',
+                border: `1px solid ${dyadInfo?.color}`,
+                borderRadius: 8,
+                cursor: currentDyadStatus === DYAD_STATES.TERMINATED ? 'not-allowed' : 'pointer',
+                fontSize: 13,
+                fontWeight: 500,
+                color: dyadInfo?.color
+              }}
+            >
+              <span>{dyadInfo?.icon}</span>
+              <span>{dyadTransitioning ? 'Updating...' : dyadInfo?.label}</span>
+              {currentDyadStatus !== DYAD_STATES.TERMINATED && (
+                <span style={{ marginLeft: 4, opacity: 0.6 }}>▼</span>
+              )}
+            </button>
+
+            {/* Dropdown menu */}
+            {showDyadMenu && availableTransitions.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: 4,
+                  background: 'white',
+                  borderRadius: 8,
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                  border: '1px solid var(--sand-dark)',
+                  minWidth: 200,
+                  zIndex: 100,
+                  overflow: 'hidden'
+                }}
+              >
+                {availableTransitions.map(status => {
+                  const info = DYAD_STATE_INFO[status]
+                  return (
+                    <button
+                      key={status}
+                      onClick={() => handleDyadTransition(status)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        width: '100%',
+                        padding: '12px 16px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        textAlign: 'left',
+                        borderBottom: '1px solid var(--sand)'
+                      }}
+                      onMouseEnter={(e) => e.target.style.background = 'var(--sand)'}
+                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                    >
+                      <span style={{ fontSize: 16 }}>{info?.icon}</span>
+                      <div>
+                        <div style={{ fontWeight: 500, color: info?.color }}>{info?.label}</div>
+                        <div style={{ fontSize: 11, color: 'var(--warm-gray)' }}>
+                          {info?.description}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Click outside to close dropdown */}
+      {showDyadMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 99
+          }}
+          onClick={() => setShowDyadMenu(false)}
+        />
+      )}
       
       {/* Tabs */}
       <div className="tabs">
-        <button 
+        <button
           className={`tab ${tab === 'summary' ? 'active' : ''}`}
           onClick={() => setTab('summary')}
         >
           Summary
         </button>
-        <button 
+        <button
           className={`tab ${tab === 'excerpts' ? 'active' : ''}`}
           onClick={() => setTab('excerpts')}
         >
           Excerpts
         </button>
-        <button 
+        <button
           className={`tab ${tab === 'feedback' ? 'active' : ''}`}
           onClick={() => setTab('feedback')}
         >
           DSP Feedback
+        </button>
+        <button
+          className={`tab ${tab === 'config' ? 'active' : ''}`}
+          onClick={() => setTab('config')}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          Config History
+          <span style={{
+            fontSize: 9,
+            padding: '2px 5px',
+            background: '#FFE082',
+            color: '#F57C00',
+            borderRadius: 4,
+            fontWeight: 600
+          }}>DEMO</span>
         </button>
       </div>
       
@@ -304,8 +568,8 @@ export default function PreSession({ therapist, client }) {
                       </span>
                     )}
                     {reviewedExchanges[i] && (
-                      <span className={`badge ${reviewedExchanges[i] === 'good' ? 'success' : 'default'}`}>
-                        {reviewedExchanges[i] === 'good' ? '✓ Approved' : '📝 Feedback Sent'}
+                      <span className={`badge ${reviewedExchanges[i] === 'good' ? 'success' : 'warning'}`}>
+                        {reviewedExchanges[i] === 'good' ? '👍 Approved' : '👎 Feedback Sent'}
                       </span>
                     )}
                   </div>
@@ -324,52 +588,101 @@ export default function PreSession({ therapist, client }) {
                   </div>
                 )}
                 
-                {/* Feedback input (shown when open) */}
+                {/* Feedback panel with reason codes (shown when thumbs down clicked) */}
                 {feedbackOpen === i && (
-                  <div style={{ marginTop: 16, padding: 16, background: 'var(--sage-light)', borderRadius: 8 }}>
-                    <textarea
-                      className="form-textarea"
-                      placeholder="Enter feedback on this AI response..."
-                      rows="3"
-                      value={exchangeFeedback[i] || ''}
-                      onChange={(e) => setExchangeFeedback(prev => ({ ...prev, [i]: e.target.value }))}
-                      style={{ marginBottom: 12 }}
-                    />
+                  <div style={{ marginTop: 16, padding: 16, background: '#FFF8E1', borderRadius: 8, border: '1px solid #FFE082' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 12, color: '#F57C00' }}>
+                      What needed improvement?
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                      {FEEDBACK_REASONS.map(reason => (
+                        <label
+                          key={reason.code}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '8px 12px',
+                            background: (selectedReasons[i] || []).includes(reason.code) ? '#FFE082' : 'white',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            fontSize: 13,
+                            border: '1px solid #FFE082'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={(selectedReasons[i] || []).includes(reason.code)}
+                            onChange={() => toggleReason(i, reason.code)}
+                            style={{ accentColor: '#F57C00' }}
+                          />
+                          {reason.label}
+                        </label>
+                      ))}
+                    </div>
+                    {(selectedReasons[i] || []).includes('other') && (
+                      <textarea
+                        className="form-textarea"
+                        placeholder="Describe the issue..."
+                        rows="2"
+                        value={exchangeFeedback[i] || ''}
+                        onChange={(e) => setExchangeFeedback(prev => ({ ...prev, [i]: e.target.value }))}
+                        style={{ marginBottom: 12 }}
+                      />
+                    )}
                     <div className="flex gap-8">
-                      <button 
+                      <button
                         className="btn small primary"
                         onClick={() => handleSubmitExchangeFeedback(exchange, i)}
+                        style={{ background: '#F57C00' }}
                       >
-                        Submit
+                        Submit Feedback
                       </button>
-                      <button 
+                      <button
                         className="btn small ghost"
-                        onClick={() => setFeedbackOpen(null)}
+                        onClick={() => {
+                          setFeedbackOpen(null)
+                          setSelectedReasons(prev => ({ ...prev, [i]: [] }))
+                        }}
                       >
                         Cancel
                       </button>
                     </div>
                   </div>
                 )}
-                
-                {/* Action buttons */}
+
+                {/* Action buttons - Thumbs up/down */}
                 {!reviewedExchanges[i] && feedbackOpen !== i && (
                   <div className="flex justify-between items-center mt-16">
                     <div className="flex gap-8">
-                      <button 
-                        className="btn small secondary"
+                      <button
+                        className="btn small"
                         onClick={() => handleMarkGood(exchange, i)}
+                        style={{
+                          background: '#E8F5E9',
+                          color: '#2E7D32',
+                          border: '1px solid #A5D6A7',
+                          padding: '6px 16px'
+                        }}
+                        title="Approve this response"
                       >
-                        ✓ Good
+                        👍
                       </button>
-                      <button 
-                        className="btn small ghost"
+                      <button
+                        className="btn small"
                         onClick={() => handleToggleFeedback(i)}
+                        style={{
+                          background: '#FFF3E0',
+                          color: '#E65100',
+                          border: '1px solid #FFCC80',
+                          padding: '6px 16px'
+                        }}
+                        title="Needs improvement"
                       >
-                        Feedback
+                        👎
                       </button>
                     </div>
-                    <button className="btn small ghost">View Full Exchange</button>
+                    <button className="btn small ghost">View Full</button>
                   </div>
                 )}
               </div>
@@ -489,7 +802,7 @@ export default function PreSession({ therapist, client }) {
                 />
               </div>
               
-              <button 
+              <button
                 className="btn primary mt-16"
                 onClick={handleSubmitDSPFeedback}
                 disabled={submittingDSP}
@@ -498,6 +811,102 @@ export default function PreSession({ therapist, client }) {
               </button>
             </>
           )}
+        </>
+      )}
+
+      {/* Config History Tab */}
+      {tab === 'config' && (
+        <>
+          <div className="card mb-24" style={{ padding: 16, background: '#FFF8E1', border: '1px dashed #FFE082' }}>
+            <div className="flex items-center gap-8">
+              <span>🔧</span>
+              <span style={{ fontSize: 13, color: '#F57C00' }}>
+                <strong>Demo Only:</strong> This audit view would be in an admin panel in production. Policy Packs track configuration snapshots for compliance and rollback.
+              </span>
+            </div>
+          </div>
+
+          {(() => {
+            const policyPacks = getPolicyPackHistory(client)
+            const typeLabels = {
+              [POLICY_PACK_TYPES.THERAPIST_CONFIG]: { label: 'Therapist Config', icon: '⚙️', color: '#1565C0' },
+              [POLICY_PACK_TYPES.CLIENT_ACTIVATION]: { label: 'Activation', icon: '✓', color: '#2E7D32' },
+              [POLICY_PACK_TYPES.SESSION_START]: { label: 'Session', icon: '📝', color: '#7B1FA2' },
+              [POLICY_PACK_TYPES.MANUAL_SNAPSHOT]: { label: 'Snapshot', icon: '📷', color: '#F57C00' },
+              [POLICY_PACK_TYPES.CONFIG_CHANGE]: { label: 'Config Change', icon: '🔄', color: '#00838F' }
+            }
+
+            if (policyPacks.length === 0) {
+              return (
+                <div className="card" style={{ padding: 40, textAlign: 'center' }}>
+                  <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>📋</div>
+                  <p style={{ color: 'var(--warm-gray)' }}>
+                    No configuration history yet. Policy packs are created when you complete a post-session review or change client settings.
+                  </p>
+                </div>
+              )
+            }
+
+            return (
+              <div className="flex flex-col gap-12">
+                {policyPacks.slice().reverse().map((pack, i) => {
+                  const typeInfo = typeLabels[pack.type] || typeLabels[POLICY_PACK_TYPES.CONFIG_CHANGE]
+                  return (
+                    <div key={pack.version} className="card" style={{ padding: 16 }}>
+                      <div className="flex justify-between items-start mb-12">
+                        <div className="flex items-center gap-8">
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '4px 10px',
+                            background: typeInfo.color + '15',
+                            color: typeInfo.color,
+                            borderRadius: 12,
+                            fontSize: 12,
+                            fontWeight: 500
+                          }}>
+                            {typeInfo.icon} {typeInfo.label}
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--warm-gray)' }}>
+                            v{pack.version}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 12, color: 'var(--warm-gray)' }}>
+                          {new Date(pack.created_at).toLocaleString()}
+                        </span>
+                      </div>
+
+                      {pack.notes && (
+                        <p style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 12 }}>
+                          {pack.notes}
+                        </p>
+                      )}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div style={{ fontSize: 12 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--warm-gray)' }}>
+                            Therapist Config
+                          </div>
+                          <div>Modality: {pack.therapist_config?.modality || 'N/A'}</div>
+                          <div>Directiveness: {pack.therapist_config?.dsp_directiveness || 'N/A'}</div>
+                          <div>Warmth: {pack.therapist_config?.dsp_warmth || 'N/A'}</div>
+                        </div>
+                        <div style={{ fontSize: 12 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--warm-gray)' }}>
+                            Client Config
+                          </div>
+                          <div>Dyad Status: {pack.client_config?.dyad_status || 'N/A'}</div>
+                          <div>Modality Override: {pack.client_config?.dsp_adjustments?.modality_override || 'None'}</div>
+                          <div>Daily Limit: {pack.client_config?.dsp_adjustments?.max_turns_per_day || 20} msgs</div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </>
       )}
     </div>

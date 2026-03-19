@@ -9,7 +9,7 @@ const MODALITIES = [
 
 const STEPS = ['Orientation', 'Style Preferences', 'Boundaries', 'Review']
 
-export default function Intake({ therapist, onUpdate, onNext }) {
+export default function TherapistSettings({ therapist, onUpdate, onNext }) {
   const [step, setStep] = useState(0)
   const [complete, setComplete] = useState(false)
   const [config, setConfig] = useState({
@@ -54,7 +54,7 @@ export default function Intake({ therapist, onUpdate, onNext }) {
               Edit Configuration
             </button>
             <button className="btn secondary" onClick={onNext}>
-              Go to Post-Session →
+              Go to Client Setup →
             </button>
           </div>
         </div>
