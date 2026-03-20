@@ -23,6 +23,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
   const [saving, setSaving] = useState(false)
   const [config, setConfig] = useState({
     display_name: '',
+    sensitivity_topics: '',
     avoid_topics: '',
     contraindications: '',
     modality_override: '',
@@ -51,6 +52,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
     setSelectedClient(c)
     setConfig({
       display_name: c.display_name || '',
+      sensitivity_topics: c.dsp_adjustments?.sensitivity_topics?.join(', ') || '',
       avoid_topics: c.dsp_adjustments?.avoid_topics?.join(', ') || '',
       contraindications: c.dsp_adjustments?.contraindications || '',
       modality_override: c.dsp_adjustments?.modality_override || '',
@@ -65,6 +67,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
     setSelectedClient(null)
     setConfig({
       display_name: '',
+      sensitivity_topics: '',
       avoid_topics: '',
       contraindications: '',
       modality_override: '',
@@ -102,6 +105,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
       // Build DSP adjustments
       const dspAdjustments = {
         ...(clientToUpdate.dsp_adjustments || {}),
+        sensitivity_topics: config.sensitivity_topics.split(',').map(s => s.trim()).filter(Boolean),
         avoid_topics: config.avoid_topics.split(',').map(s => s.trim()).filter(Boolean),
         contraindications: config.contraindications,
         modality_override: config.modality_override || null,
@@ -158,6 +162,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
 
       const dspAdjustments = {
         ...(clientToUpdate.dsp_adjustments || {}),
+        sensitivity_topics: config.sensitivity_topics.split(',').map(s => s.trim()).filter(Boolean),
         avoid_topics: config.avoid_topics.split(',').map(s => s.trim()).filter(Boolean),
         contraindications: config.contraindications,
         modality_override: config.modality_override || null,
@@ -370,16 +375,30 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
           <p className="subtitle">Set client-specific safety boundaries for AI interactions.</p>
 
           <div className="form-group">
+            <label className="form-label">Sensitive Topics (comma-separated)</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g., father, family visits, childhood home"
+              value={config.sensitivity_topics}
+              onChange={(e) => setConfig({ ...config, sensitivity_topics: e.target.value })}
+            />
+            <div style={{ fontSize: 12, color: 'var(--warm-gray)', marginTop: 4 }}>
+              AI will use grounding/containment when these come up (Route B)
+            </div>
+          </div>
+
+          <div className="form-group">
             <label className="form-label">Topics to Avoid (comma-separated)</label>
             <input
               type="text"
               className="form-input"
-              placeholder="e.g., divorce proceedings, sister relationship, specific trauma content"
+              placeholder="e.g., divorce proceedings, legal matters, medication details"
               value={config.avoid_topics}
               onChange={(e) => setConfig({ ...config, avoid_topics: e.target.value })}
             />
             <div style={{ fontSize: 12, color: 'var(--warm-gray)', marginTop: 4 }}>
-              AI will redirect away from these topics for this client
+              AI will redirect away from these topics entirely (Route D)
             </div>
           </div>
 
@@ -484,10 +503,23 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
               </div>
             </div>
 
+            {config.sensitivity_topics && (
+              <div className="card sand">
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--warm-gray)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                  Sensitive Topics (Grounding)
+                </div>
+                <div className="flex gap-8 flex-wrap">
+                  {config.sensitivity_topics.split(',').filter(t => t.trim()).map((topic, i) => (
+                    <span key={i} className="badge default">{topic.trim()}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {config.avoid_topics && (
               <div className="card sand">
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--warm-gray)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-                  Topics to Avoid
+                  Topics to Avoid (Redirect)
                 </div>
                 <div className="flex gap-8 flex-wrap">
                   {config.avoid_topics.split(',').filter(t => t.trim()).map((topic, i) => (

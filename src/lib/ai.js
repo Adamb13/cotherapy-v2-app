@@ -7,26 +7,22 @@
 
 const ROUTE_E_PATTERNS = [
   // Active suicidal ideation with plan/intent
-  /\b(kill myself|end my life|want to die|going to die)\b/i,
-  /\b(have a plan|know how i'll|pills ready|gun|bridge|method)\b/i,
-  /\b(final goodbye|end it all|no reason to live|can't go on)\b/i,
+  /\b(kill(ing)? myself|end(ing)? (my )?life|end(ing)? it|want to die|going to die)\b/i,
+  /\b(take my (own )?life|taking my (own )?life|take (my )?life)\b/i,
+  /\b(have a plan|know how i('ll| will)|pills ready|gun|bridge|method)\b/i,
+  /\b(final goodbye|end it all|no reason to live|can't go on|cannot go on)\b/i,
+  /\b(don't want to (be here|live|exist)|do not want to (be here|live|exist))\b/i,
+  /\b(suicide|suicidal)\b/i,
   // Active self-harm
-  /\b(hurting myself|cutting myself|going to hurt myself)\b/i,
+  /\b(hurt(ing)? myself|cut(ting)? myself|harm(ing)? myself)\b/i,
   // Homicidal ideation
-  /\b(kill (someone|him|her|them)|hurt (someone|him|her|them))\b/i,
+  /\b(kill(ing)? (someone|him|her|them|people))\b/i,
+  /\b(hurt(ing)? (someone|him|her|them|people))\b/i,
 ]
 
-const ROUTE_B_PATTERNS = [
-  // Trauma content
-  /\b(trauma|flashback|triggered|traumatic)\b/i,
-  /\b(abuse|abused|abusive|assault)\b/i,
-  // Dissociation
-  /\b(dissociat|detached|not in my body|watching myself)\b/i,
-  /\b(shutting down|can't feel anything|numb|frozen)\b/i,
-  // Passive SI (without plan)
-  /\b(suicidal thoughts?|thinking about death|don't want to be here)\b/i,
-  /\b(wish i wasn't here|better off without me)\b/i,
-]
+// Route B: No hardcoded patterns - uses client sensitivity flags from intake
+// Sensitivity flags are therapist-configured topics that need containment/grounding
+// (e.g., "family visit" flagged because therapist knows it connects to trauma history)
 
 const ROUTE_D_PATTERNS = [
   // Off-limits professional advice
@@ -102,14 +98,14 @@ export function detectRoute(message, client = null) {
     }
   }
 
-  // Route B: Soften — sensitive content
-  for (const pattern of ROUTE_B_PATTERNS) {
-    if (pattern.test(message)) {
-      return {
-        route: 'B',
-        tier: 'TIER_2',
-        reason: 'Sensitive topic - containment approach'
-      }
+  // Route B: Soften — check sensitivity flags from client intake
+  // These are therapist-flagged topics that need containment/grounding (not full block)
+  const sensitivityTopics = client?.dsp_adjustments?.sensitivity_topics || []
+  if (matchesAvoidedTopics(message, sensitivityTopics)) {
+    return {
+      route: 'B',
+      tier: 'TIER_2',
+      reason: 'Sensitive topic - containment approach'
     }
   }
 
@@ -244,6 +240,9 @@ You may:
   return prompt
 }
 
+// Hardcoded crisis response for safety fallback
+const CRISIS_RESPONSE = "I'm concerned about what you're sharing, and I want to make sure you're safe. Please reach out to the 988 Suicide & Crisis Lifeline by calling or texting 988. Your therapist has been notified and will follow up with you. You don't have to go through this alone."
+
 // Generate real response using secure API endpoint
 export async function generateResponse(userMessage, therapist, conversationHistory = [], ktms = [], client = null) {
   const { route, tier, reason } = detectRoute(userMessage, client)
@@ -285,6 +284,22 @@ export async function generateResponse(userMessage, therapist, conversationHisto
 
     const data = await response.json()
 
+    // SAFETY NET: If regex detected crisis (Route E), verify AI response contains crisis resources
+    // If not, override with hardcoded crisis response
+    if (route === 'E') {
+      const hasResources = /988|crisis|lifeline|emergency|therapist.*notified/i.test(data.content)
+      if (!hasResources) {
+        console.warn('Route E detected but AI response missing crisis resources - using fallback')
+        return {
+          content: CRISIS_RESPONSE,
+          route: 'E',
+          tier: 'TIER_3',
+          tierReason: reason,
+          flagged: true
+        }
+      }
+    }
+
     return {
       content: data.content,
       route,
@@ -295,10 +310,10 @@ export async function generateResponse(userMessage, therapist, conversationHisto
   } catch (error) {
     console.error('Chat API error:', error)
 
-    // Fallback for errors
+    // Fallback for errors - use hardcoded crisis response if Route E
     if (route === 'E') {
       return {
-        content: "I'm concerned about what you're sharing. Please reach out to the 988 Suicide & Crisis Lifeline by calling or texting 988. Your therapist has been notified.",
+        content: CRISIS_RESPONSE,
         route: 'E',
         tier: 'TIER_3',
         tierReason: 'Crisis protocol - API fallback',
