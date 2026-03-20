@@ -54,8 +54,9 @@ Create a `.env` file with:
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 
-# Anthropic (get from console.anthropic.com)
-VITE_ANTHROPIC_API_KEY=sk-ant-your-key
+# Anthropic - SERVER-SIDE ONLY (no VITE_ prefix keeps it secure)
+# For Vercel: Add this in Project Settings → Environment Variables
+ANTHROPIC_API_KEY=sk-ant-your-key
 ```
 
 ### Database Setup (New Projects Only)
