@@ -2,6 +2,8 @@
 
 ## General
 - Explain changes in non-technical terms before asking to commit
+- Provide relevant educational context to help understand development concepts
+- Ask if there are any questions before proceeding with implementation
 
 ## Security
 - ALWAYS check for exposed API keys before pushing code
