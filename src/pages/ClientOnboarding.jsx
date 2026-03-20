@@ -367,19 +367,10 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
       {step === 1 && (
         <>
           <h2>Client-Specific Boundaries</h2>
-          <p className="subtitle">These override your global settings for this client only.</p>
-
-          <div className="card info mb-24" style={{ padding: 16, border: 'none' }}>
-            <div className="flex items-center gap-12">
-              <span style={{ fontSize: 20 }}>🔒</span>
-              <div style={{ fontSize: 13, color: 'var(--sage-dark)' }}>
-                Your global avoid topics: <strong>{therapist?.avoid_topics?.join(', ') || 'None set'}</strong>
-              </div>
-            </div>
-          </div>
+          <p className="subtitle">Set client-specific safety boundaries for AI interactions.</p>
 
           <div className="form-group">
-            <label className="form-label">Additional Topics to Avoid (comma-separated)</label>
+            <label className="form-label">Topics to Avoid (comma-separated)</label>
             <input
               type="text"
               className="form-input"

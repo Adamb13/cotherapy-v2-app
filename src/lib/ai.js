@@ -1,11 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk'
-
-// Initialize Anthropic client (browser mode for demo)
-const anthropic = new Anthropic({
-  apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-  dangerouslyAllowBrowser: true
-})
-
 // Safety Router: Routes A-E (from PRD v2.1)
 // Route A: Allow — full engagement within Policy Pack + TIM level
 // Route B: Soften — containment/resourcing response, no clinical work
@@ -91,9 +83,7 @@ export function detectRoute(message, client = null) {
   }
 
   // Route D: Block — check avoided topics and off-limits requests
-  const avoidTopics = [
-    ...(client?.dsp_adjustments?.avoid_topics || [])
-  ]
+  const avoidTopics = client?.dsp_adjustments?.avoid_topics || []
   if (matchesAvoidedTopics(message, avoidTopics)) {
     return {
       route: 'D',
@@ -146,14 +136,9 @@ export function detectTier(message) {
 
 // Build system prompt based on therapist config, client config, and tier
 function buildSystemPrompt(therapist, tier, ktms = [], client = null) {
-  // Merge therapist + client boundaries
-  const therapistAvoid = therapist.avoid_topics || []
-  const clientAvoid = client?.dsp_adjustments?.avoid_topics || []
-  const allAvoidTopics = [...new Set([...therapistAvoid, ...clientAvoid])]
-
-  const therapistContra = therapist.contraindications || ''
-  const clientContra = client?.dsp_adjustments?.contraindications || ''
-  const allContraindications = [therapistContra, clientContra].filter(Boolean).join('\n')
+  // Client-specific boundaries
+  const avoidTopics = client?.dsp_adjustments?.avoid_topics || []
+  const contraindications = client?.dsp_adjustments?.contraindications || ''
 
   // Use client modality override if set, otherwise therapist's
   const modality = client?.dsp_adjustments?.modality_override || therapist.modality
@@ -169,8 +154,8 @@ function buildSystemPrompt(therapist, tier, ktms = [], client = null) {
 ## Therapist Configuration
 - Modality: ${modality}
 - Approach: ${therapist.approach_description || 'Standard ' + modality + ' approach'}
-${allAvoidTopics.length ? `- Topics to AVOID (redirect away from these): ${allAvoidTopics.join(', ')}` : ''}
-${allContraindications ? `\n## Clinical Considerations\n${allContraindications}` : ''}
+${avoidTopics.length ? `- Topics to AVOID (redirect away from these): ${avoidTopics.join(', ')}` : ''}
+${contraindications ? `\n## Clinical Considerations\n${contraindications}` : ''}
 
 ## Dialogue Style
 - Directiveness: ${therapist.dsp_directiveness === 'directive' ? 'More directive, offering suggestions' : 'More exploratory, asking questions'}
@@ -259,7 +244,7 @@ You may:
   return prompt
 }
 
-// Generate real response using Claude API
+// Generate real response using secure API endpoint
 export async function generateResponse(userMessage, therapist, conversationHistory = [], ktms = [], client = null) {
   const { route, tier, reason } = detectRoute(userMessage, client)
 
@@ -268,10 +253,10 @@ export async function generateResponse(userMessage, therapist, conversationHisto
 
   let systemPrompt = buildSystemPrompt(therapist, tier, ktms, client)
   systemPrompt = addRouteInstructions(systemPrompt, route, modality)
-  
+
   // Build messages array
   const messages = []
-  
+
   // Add conversation history (last 10 messages)
   for (const msg of conversationHistory.slice(-10)) {
     messages.push({
@@ -279,35 +264,36 @@ export async function generateResponse(userMessage, therapist, conversationHisto
       content: msg.content
     })
   }
-  
+
   // Add current message
   messages.push({
     role: 'user',
     content: userMessage
   })
-  
+
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 200,
-      system: systemPrompt,
-      messages: messages
+    // Call secure serverless function instead of Anthropic directly
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, system: systemPrompt })
     })
-    
-    const content = response.content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('')
-    
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+
     return {
-      content,
+      content: data.content,
       route,
       tier,
       tierReason: reason,
       flagged: route !== 'A'
     }
   } catch (error) {
-    console.error('Claude API error:', error)
+    console.error('Chat API error:', error)
 
     // Fallback for errors
     if (route === 'E') {
@@ -319,20 +305,15 @@ export async function generateResponse(userMessage, therapist, conversationHisto
         flagged: true
       }
     }
-    
-    return {
-      content: "I'm having trouble responding right now. Please try again in a moment.",
-      route: 'A',
-      tier: 'TIER_1',
-      tierReason: null,
-      flagged: false
-    }
+
+    // Fall back to mock response
+    return generateMockResponse(userMessage, therapist, client)
   }
 }
 
-// Extract clinical moments from session notes using Claude
-export async function extractMomentsFromNotes(notes, therapist) {
-  const systemPrompt = `You are a clinical AI assistant helping a ${therapist.modality} therapist extract clinical moments from session notes.
+// Build system prompt for moment extraction
+function buildMomentExtractionPrompt(therapist) {
+  return `You are a clinical AI assistant helping a ${therapist.modality} therapist extract clinical moments from session notes.
 
 Extract significant moments and categorize each as one of:
 - KEY_MEMORY: Significant biographical events, formative experiences
@@ -357,41 +338,34 @@ Return ONLY a JSON array, no other text:
   {"category": "INSIGHT", "content": "Client recognized pattern of...", "ai_significance": 4, "confidence": "high"},
   ...
 ]`
+}
+
+// Extract clinical moments from session notes using secure API
+export async function extractMomentsFromNotes(notes, therapist) {
+  const systemPrompt = buildMomentExtractionPrompt(therapist)
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: `Session notes:\n\n${notes}` }]
+    const response = await fetch('/api/extract-moments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes, systemPrompt })
     })
-    
-    const text = response.content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('')
-    
-    // Parse JSON from response
-    const jsonMatch = text.match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0])
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
     }
-    
-    return []
+
+    const data = await response.json()
+    return data.moments || []
   } catch (error) {
     console.error('Error extracting moments:', error)
     return []
   }
 }
 
-// Generate KTMs from extracted moments using Claude
-export async function generateKTMsFromMoments(moments, therapist) {
-  if (moments.length === 0) return []
-  
-  const highSignificanceMoments = moments.filter(m => m.ai_significance >= 3)
-  if (highSignificanceMoments.length === 0) return []
-  
-  const systemPrompt = `You are helping a ${therapist.modality} therapist create Key Therapeutic Messages (KTMs) for intersession reinforcement.
+// Build system prompt for KTM generation
+function buildKTMPrompt(therapist) {
+  return `You are helping a ${therapist.modality} therapist create Key Therapeutic Messages (KTMs) for intersession reinforcement.
 
 KTMs are therapist-approved messages that capture key insights from the session. They should:
 - Be in third person, as in clinical session notes ("Client recognized...", "Client expressed...")
@@ -410,29 +384,30 @@ Return ONLY a JSON array, no other text:
 ]
 
 ai_emphasis is 1-5, where 5 means most clinically significant.`
+}
+
+// Generate KTMs from extracted moments using secure API
+export async function generateKTMsFromMoments(moments, therapist) {
+  if (moments.length === 0) return []
+
+  const highSignificanceMoments = moments.filter(m => m.ai_significance >= 3)
+  if (highSignificanceMoments.length === 0) return []
+
+  const systemPrompt = buildKTMPrompt(therapist)
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: `Generate 2-3 KTMs from these moments:\n\n${highSignificanceMoments.map(m => `[${m.category}] ${m.content}`).join('\n')}`
-      }]
+    const response = await fetch('/api/generate-ktms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moments: highSignificanceMoments, systemPrompt })
     })
-    
-    const text = response.content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('')
-    
-    const jsonMatch = text.match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0])
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
     }
-    
-    return []
+
+    const data = await response.json()
+    return data.ktms || []
   } catch (error) {
     console.error('Error generating KTMs:', error)
     return []

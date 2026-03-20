@@ -80,10 +80,15 @@ export default function ClientChat({ client, therapist }) {
         therapist_reviewed: false
       })
 
-      // Generate AI response
+      // Generate AI response (uses secure server-side API)
       let aiResponse
-      if (useRealAI && import.meta.env.VITE_ANTHROPIC_API_KEY) {
-        aiResponse = await generateResponse(userMessage, therapist, messages, ktms, client)
+      if (useRealAI) {
+        try {
+          aiResponse = await generateResponse(userMessage, therapist, messages, ktms, client)
+        } catch (apiError) {
+          console.warn('API failed, falling back to mock:', apiError.message)
+          aiResponse = generateMockResponse(userMessage, therapist, client)
+        }
       } else {
         aiResponse = generateMockResponse(userMessage, therapist, client)
       }

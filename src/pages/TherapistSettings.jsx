@@ -17,8 +17,6 @@ export default function TherapistSettings({ therapist, onUpdate, onNext }) {
     dsp_directiveness: therapist?.dsp_directiveness || '',
     dsp_warmth: therapist?.dsp_warmth || '',
     dsp_structure: therapist?.dsp_structure || '',
-    avoid_topics: therapist?.avoid_topics?.join(', ') || '',
-    contraindications: therapist?.contraindications || '',
     default_integration_directions: therapist?.default_integration_directions || ['Reflective']
   })
 
@@ -29,8 +27,6 @@ export default function TherapistSettings({ therapist, onUpdate, onNext }) {
         dsp_directiveness: config.dsp_directiveness,
         dsp_warmth: config.dsp_warmth,
         dsp_structure: config.dsp_structure,
-        avoid_topics: config.avoid_topics.split(',').map(s => s.trim()).filter(Boolean),
-        contraindications: config.contraindications,
         default_integration_directions: config.default_integration_directions
       }
       const updated = await updateTherapist(therapist.id, updates)
@@ -197,8 +193,8 @@ export default function TherapistSettings({ therapist, onUpdate, onNext }) {
       {step === 2 && (
         <>
           <h2>Safety & Scope Boundaries</h2>
-          <p className="subtitle">Define what the AI should and shouldn't engage with.</p>
-          
+          <p className="subtitle">Configure default safety settings for AI interactions.</p>
+
           <div className="card info mb-24" style={{ padding: 16 }}>
             <div className="flex gap-12">
               <span style={{ fontSize: 20 }}>ℹ</span>
@@ -214,31 +210,16 @@ export default function TherapistSettings({ therapist, onUpdate, onNext }) {
               </div>
             </div>
           </div>
-          
-          <div className="form-group">
-            <label className="form-label">Topics to avoid (comma-separated)</label>
-            <input 
-              type="text" 
-              className="form-input"
-              placeholder="e.g., specific trauma details, medication dosing, legal advice"
-              value={config.avoid_topics}
-              onChange={(e) => setConfig({ ...config, avoid_topics: e.target.value })}
-            />
+
+          <div className="card sand mb-24" style={{ padding: 16 }}>
+            <div style={{ fontSize: 13, color: 'var(--warm-gray)' }}>
+              <strong>Note:</strong> Client-specific boundaries (topics to avoid, contraindications) are configured per-client in Client Setup.
+            </div>
           </div>
-          
-          <div className="form-group">
-            <label className="form-label">Contraindications or special considerations</label>
-            <textarea 
-              className="form-textarea"
-              placeholder="Any specific clinical considerations the AI should be aware of..."
-              value={config.contraindications}
-              onChange={(e) => setConfig({ ...config, contraindications: e.target.value })}
-            />
-          </div>
-          
+
           <div className="form-group">
             <label className="form-label">Default Integration Direction</label>
-            <select 
+            <select
               className="form-select"
               value={config.default_integration_directions[0]}
               onChange={(e) => setConfig({ ...config, default_integration_directions: [e.target.value] })}

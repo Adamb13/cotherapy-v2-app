@@ -622,9 +622,7 @@ export async function createPolicyPackSnapshot(clientId, therapist, type = POLIC
       approach_description: therapist?.approach_description,
       dsp_directiveness: therapist?.dsp_directiveness,
       dsp_warmth: therapist?.dsp_warmth,
-      dsp_structure: therapist?.dsp_structure,
-      avoid_topics: therapist?.avoid_topics,
-      contraindications: therapist?.contraindications
+      dsp_structure: therapist?.dsp_structure
     },
     client_config: {
       display_name: client?.display_name,
