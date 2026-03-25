@@ -764,3 +764,101 @@ export async function createPolicyPackEdit(edit) {
   if (error) throw error
   return data
 }
+
+// ============================================================
+// DSP LEARNING: Analyze feedback and update learned preferences
+// ============================================================
+
+// Get all response reviews for a therapist
+export async function getResponseReviewsForTherapist(therapistId = DEMO_THERAPIST_ID) {
+  const { data, error } = await supabase
+    .from('response_reviews')
+    .select('*')
+    .eq('therapist_id', therapistId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+// Reason codes that trigger learned preferences (threshold = 3)
+const LEARNING_THRESHOLDS = {
+  too_directive: { key: 'reduce_directiveness', label: 'Reduce directiveness' },
+  wrong_tone: { key: 'tone_adjustment_needed', label: 'Tone adjustment needed' },
+  off_modality: { key: 'modality_drift_detected', label: 'Modality drift detected' },
+  too_long: { key: 'prefer_shorter', label: 'Prefer shorter responses' },
+  too_short: { key: 'prefer_longer', label: 'Prefer longer responses' },
+  should_contain: { key: 'over_exploring', label: 'Over-exploring (should contain more)' },
+  missed_emotion: { key: 'improve_empathy', label: 'Improve emotional attunement' },
+  missed_ktm: { key: 'use_ktms_more', label: 'Use KTMs more frequently' }
+}
+
+// Analyze response reviews and compute learned preferences
+export function computeLearnedPreferences(reviews) {
+  const preferences = {}
+  const reasonCounts = {}
+
+  // Count all reason codes
+  for (const review of reviews) {
+    const reasons = review.reason_codes || []
+    for (const reason of reasons) {
+      reasonCounts[reason] = (reasonCounts[reason] || 0) + 1
+    }
+  }
+
+  // Apply thresholds to generate preferences
+  for (const [reasonCode, config] of Object.entries(LEARNING_THRESHOLDS)) {
+    const count = reasonCounts[reasonCode] || 0
+    if (count >= 3) {
+      preferences[config.key] = {
+        active: true,
+        count: count,
+        label: config.label
+      }
+    }
+  }
+
+  // Collect correction examples (original → edited pairs)
+  const correctionExamples = reviews
+    .filter(r => r.edited_response && r.edited_response.trim())
+    .slice(0, 5) // Last 5 examples
+    .map(r => ({
+      original: r.original_response,
+      edited: r.edited_response,
+      created_at: r.created_at
+    }))
+
+  if (correctionExamples.length > 0) {
+    preferences.correction_examples = correctionExamples
+  }
+
+  // Store total review count for display
+  preferences.total_reviews = reviews.length
+
+  return preferences
+}
+
+// Update therapist's learned preferences
+export async function updateTherapistLearnedPreferences(therapistId = DEMO_THERAPIST_ID, preferences) {
+  const { data, error } = await supabase
+    .from('therapists')
+    .update({ dsp_learned_preferences: preferences })
+    .eq('id', therapistId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Analyze all reviews and update learned preferences (call after each feedback submission)
+export async function refreshLearnedPreferences(therapistId = DEMO_THERAPIST_ID) {
+  const reviews = await getResponseReviewsForTherapist(therapistId)
+  const preferences = computeLearnedPreferences(reviews)
+  return await updateTherapistLearnedPreferences(therapistId, preferences)
+}
+
+// Reset learned preferences to empty
+export async function resetLearnedPreferences(therapistId = DEMO_THERAPIST_ID) {
+  return await updateTherapistLearnedPreferences(therapistId, {})
+}

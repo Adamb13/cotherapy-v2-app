@@ -133,6 +133,64 @@ export function detectTier(message) {
   return { tier, reason }
 }
 
+// Build learned preferences section from therapist feedback history
+function buildLearnedPreferencesSection(learnedPrefs) {
+  if (!learnedPrefs || Object.keys(learnedPrefs).length === 0) {
+    return ''
+  }
+
+  const adjustments = []
+
+  // Check each learned preference
+  if (learnedPrefs.reduce_directiveness?.active) {
+    adjustments.push(`- Be less directive, more exploratory (based on ${learnedPrefs.reduce_directiveness.count} corrections)`)
+  }
+  if (learnedPrefs.tone_adjustment_needed?.active) {
+    adjustments.push(`- Adjust tone based on feedback (based on ${learnedPrefs.tone_adjustment_needed.count} corrections)`)
+  }
+  if (learnedPrefs.modality_drift_detected?.active) {
+    adjustments.push(`- Stay closer to the designated modality (based on ${learnedPrefs.modality_drift_detected.count} corrections)`)
+  }
+  if (learnedPrefs.prefer_shorter?.active) {
+    adjustments.push(`- Keep responses shorter (based on ${learnedPrefs.prefer_shorter.count} corrections)`)
+  }
+  if (learnedPrefs.prefer_longer?.active) {
+    adjustments.push(`- Provide more detailed responses (based on ${learnedPrefs.prefer_longer.count} corrections)`)
+  }
+  if (learnedPrefs.over_exploring?.active) {
+    adjustments.push(`- Contain more, explore less (based on ${learnedPrefs.over_exploring.count} corrections)`)
+  }
+  if (learnedPrefs.improve_empathy?.active) {
+    adjustments.push(`- Improve emotional attunement (based on ${learnedPrefs.improve_empathy.count} corrections)`)
+  }
+  if (learnedPrefs.use_ktms_more?.active) {
+    adjustments.push(`- Use Key Therapeutic Messages more frequently (based on ${learnedPrefs.use_ktms_more.count} corrections)`)
+  }
+
+  if (adjustments.length === 0 && !learnedPrefs.correction_examples?.length) {
+    return ''
+  }
+
+  let section = '\n## Learned from Therapist Feedback\n'
+
+  if (adjustments.length > 0) {
+    section += adjustments.join('\n') + '\n'
+  }
+
+  // Add correction examples (most valuable for few-shot learning)
+  const examples = learnedPrefs.correction_examples || []
+  if (examples.length > 0) {
+    section += '\n### Example Corrections (what this therapist prefers)\n'
+    // Use last 3 examples to keep prompt size reasonable
+    for (const ex of examples.slice(0, 3)) {
+      section += `Original: "${ex.original.slice(0, 100)}${ex.original.length > 100 ? '...' : ''}"\n`
+      section += `Therapist preferred: "${ex.edited.slice(0, 150)}${ex.edited.length > 150 ? '...' : ''}"\n\n`
+    }
+  }
+
+  return section
+}
+
 // Build system prompt based on therapist config, client config, and tier
 function buildSystemPrompt(therapist, tier, ktms = [], client = null) {
   // Client-specific boundaries
@@ -161,6 +219,10 @@ ${contraindications ? `\n## Clinical Considerations\n${contraindications}` : ''}
 - Warmth: ${therapist.dsp_warmth === 'warm' ? 'Warm and empathic' : 'Grounded and direct'}
 - Structure: ${therapist.dsp_structure === 'structured' ? 'Structured, may suggest exercises' : 'Open-ended exploration'}
 `
+
+  // Add learned preferences from therapist feedback
+  const learnedPrefs = therapist.dsp_learned_preferences || {}
+  prompt += buildLearnedPreferencesSection(learnedPrefs)
 
   // Add KTMs if available
   if (ktms.length > 0) {

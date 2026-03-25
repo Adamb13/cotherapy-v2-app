@@ -13,6 +13,14 @@ I am a psychiatrist, not an engineer. Before making any code change:
 
 Never assume I understand technical jargon. Use analogies when helpful.
 
+## Documentation Standards
+Write excellent documentation with every change:
+- Add clear comments in code explaining WHY, not just what
+- Every new function gets a comment block: what it does, what it takes, what it returns
+- Every new table or column gets a comment explaining its purpose in the system
+- Update CLAUDE.md if the change affects architecture, safety, or schema
+- Commit messages must be descriptive: "feat: add moment_reviews table with reason code dropdowns for therapist corrections" not "add table"
+
 ## Safety Rules (Never Violate)
 - Route E crisis response MUST include 988 hotline number
 - Hardcoded fallback crisis response must exist independent of AI
