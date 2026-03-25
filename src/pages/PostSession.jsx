@@ -11,6 +11,7 @@ import {
   updateSession,
   updateClient,
   createPolicyPackSnapshot,
+  createMomentReview,
   POLICY_PACK_TYPES
 } from '../lib/db'
 import { extractMomentsFromNotes, generateKTMsFromMoments } from '../lib/ai'
@@ -22,6 +23,18 @@ const INTEGRATION_DIRECTIONS = [
   { value: 'Cognitive', icon: '💭', description: 'Focus on thought patterns and reframing' },
   { value: 'Somatic', icon: '🧘', description: 'Focus on body awareness and grounding' },
   { value: 'Stabilization', icon: '⚓', description: 'Focus on safety and regulation' }
+]
+
+// Reason codes for moment review (from PRD preference learning spec)
+const MOMENT_REASON_CODES = [
+  { code: 'excellent', label: 'Excellent extraction' },
+  { code: 'significance_too_high', label: 'Significance rated too high' },
+  { code: 'significance_too_low', label: 'Significance rated too low' },
+  { code: 'wrong_category', label: 'Wrong moment category' },
+  { code: 'missing_context', label: 'Missing important context' },
+  { code: 'not_clinically_relevant', label: 'Not clinically relevant' },
+  { code: 'needs_editing', label: 'Content needs editing' },
+  { code: 'other', label: 'Other' }
 ]
 
 // Minimum word count for quality extraction
@@ -58,6 +71,10 @@ export default function PostSession({ therapist, client, onClientUpdate, onNext 
     modality_override: '',
     max_turns_per_day: 20
   })
+
+  // Moment review state
+  const [momentReasonOpen, setMomentReasonOpen] = useState(null) // Which moment ID is showing reason dropdown
+  const [momentReasons, setMomentReasons] = useState({}) // { momentId: 'reason_code' }
 
   useEffect(() => {
     loadSession()
@@ -269,13 +286,16 @@ export default function PostSession({ therapist, client, onClientUpdate, onNext 
   }
 
   async function handleApproveMoment(id) {
-    setMoments(moments.map(m => 
+    const moment = moments.find(m => m.id === id)
+    if (!moment) return
+
+    setMoments(moments.map(m =>
       m.id === id ? { ...m, approved: true, status: 'approved' } : m
     ))
-    
-    const moment = moments.find(m => m.id === id)
-    if (moment && session) {
+
+    if (session) {
       try {
+        // Save the moment
         await createMoment({
           session_id: session.id,
           client_id: DEMO_CLIENT_ID,
@@ -286,16 +306,70 @@ export default function PostSession({ therapist, client, onClientUpdate, onNext 
           status: 'approved',
           is_active: true
         })
+
+        // Write to moment_reviews for preference learning
+        await createMomentReview({
+          therapist_id: DEMO_THERAPIST_ID,
+          client_id: DEMO_CLIENT_ID,
+          session_id: session.id,
+          moment_id: id,
+          action: 'approved',
+          original_text: moment.content,
+          edited_text: null,
+          original_type: moment.category,
+          corrected_type: null,
+          original_significance: moment.ai_significance,
+          corrected_significance: null,
+          reason_code: 'excellent'
+        })
       } catch (error) {
         console.error('Error saving moment:', error)
       }
     }
   }
 
-  function handleRejectMoment(id) {
-    setMoments(moments.map(m => 
+  // Show reason dropdown for rejecting a moment
+  function handleStartReject(id) {
+    setMomentReasonOpen(id)
+  }
+
+  // Submit rejection with reason code
+  async function handleRejectMoment(id) {
+    const reason = momentReasons[id]
+    if (!reason) {
+      alert('Please select a reason for rejecting this moment.')
+      return
+    }
+
+    const moment = moments.find(m => m.id === id)
+    if (!moment) return
+
+    setMoments(moments.map(m =>
       m.id === id ? { ...m, approved: false, status: 'rejected' } : m
     ))
+    setMomentReasonOpen(null)
+
+    if (session) {
+      try {
+        // Write to moment_reviews for preference learning
+        await createMomentReview({
+          therapist_id: DEMO_THERAPIST_ID,
+          client_id: DEMO_CLIENT_ID,
+          session_id: session.id,
+          moment_id: id,
+          action: 'rejected',
+          original_text: moment.content,
+          edited_text: null,
+          original_type: moment.category,
+          corrected_type: null,
+          original_significance: moment.ai_significance,
+          corrected_significance: null,
+          reason_code: reason
+        })
+      } catch (error) {
+        console.error('Error saving moment review:', error)
+      }
+    }
   }
 
   async function handleApproveKTM(id) {
@@ -598,20 +672,61 @@ Session focused on client's recent conflict with sister. Client expressed frustr
                   )}
                 </div>
                 <p className="moment-content">{moment.content}</p>
-                {moment.approved === null && (
+                {moment.approved === null && momentReasonOpen !== moment.id && (
                   <div className="moment-actions">
-                    <button 
+                    <button
                       className="btn primary small"
                       onClick={() => handleApproveMoment(moment.id)}
                     >
                       ✓ Approve
                     </button>
-                    <button 
+                    <button
                       className="btn ghost small"
-                      onClick={() => handleRejectMoment(moment.id)}
+                      onClick={() => handleStartReject(moment.id)}
                     >
                       Reject
                     </button>
+                  </div>
+                )}
+
+                {momentReasonOpen === moment.id && (
+                  <div style={{ marginTop: 12, padding: 12, background: '#FFF8E1', borderRadius: 8, border: '1px solid #FFE082' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 8, color: '#F57C00', fontSize: 13 }}>
+                      Why are you rejecting this moment?
+                    </div>
+                    <select
+                      value={momentReasons[moment.id] || ''}
+                      onChange={(e) => setMomentReasons(prev => ({ ...prev, [moment.id]: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        border: '1px solid #FFE082',
+                        borderRadius: 6,
+                        marginBottom: 12,
+                        background: 'white'
+                      }}
+                    >
+                      <option value="">Select a reason...</option>
+                      {MOMENT_REASON_CODES.filter(r => r.code !== 'excellent').map(reason => (
+                        <option key={reason.code} value={reason.code}>{reason.label}</option>
+                      ))}
+                    </select>
+                    <div className="flex gap-8">
+                      <button
+                        className="btn small"
+                        onClick={() => handleRejectMoment(moment.id)}
+                        style={{ background: '#E65100', color: 'white' }}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        className="btn small ghost"
+                        onClick={() => setMomentReasonOpen(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
