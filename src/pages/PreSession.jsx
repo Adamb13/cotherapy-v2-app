@@ -18,6 +18,7 @@ import {
   getPolicyPackHistory,
   createResponseReview,
   createSafetyOverride,
+  refreshLearnedPreferences,
   POLICY_PACK_TYPES
 } from '../lib/db'
 import { DEMO_THERAPIST_ID, DEMO_CLIENT_ID } from '../lib/supabase'
@@ -174,6 +175,9 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
           feeds_dsp: true,
           notes: otherComment
         })
+
+        // Refresh learned preferences based on all reviews
+        await refreshLearnedPreferences(therapist?.id || DEMO_THERAPIST_ID)
       }
       setReviewedExchanges(prev => ({ ...prev, [index]: 'needs_work' }))
       setFeedbackOpen(null)
