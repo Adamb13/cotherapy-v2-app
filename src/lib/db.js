@@ -712,3 +712,55 @@ export function comparePolicyPacks(pack1, pack2) {
 
   return changes
 }
+
+// ============================================================
+// PREFERENCE LEARNING: Review Tables
+// ============================================================
+
+// Create a moment review record (tracks therapist corrections on AI-extracted moments)
+export async function createMomentReview(review) {
+  const { data, error } = await supabase
+    .from('moment_reviews')
+    .insert(review)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Create a response review record (tracks feedback on AI chat responses)
+export async function createResponseReview(review) {
+  const { data, error } = await supabase
+    .from('response_reviews')
+    .insert(review)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Create a safety override record (tracks when therapist disagrees with AI safety classification)
+export async function createSafetyOverride(override) {
+  const { data, error } = await supabase
+    .from('safety_overrides')
+    .insert(override)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Create a policy pack edit record (tracks every config change)
+export async function createPolicyPackEdit(edit) {
+  const { data, error } = await supabase
+    .from('policy_pack_edits')
+    .insert(edit)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}

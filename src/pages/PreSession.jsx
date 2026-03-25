@@ -16,11 +16,13 @@ import {
   activateDyad,
   terminateDyad,
   getPolicyPackHistory,
+  createResponseReview,
+  createSafetyOverride,
   POLICY_PACK_TYPES
 } from '../lib/db'
 import { DEMO_THERAPIST_ID, DEMO_CLIENT_ID } from '../lib/supabase'
 
-// Reason codes for negative feedback (from PRD HITL spec)
+// Reason codes for feedback (from PRD HITL spec + preference learning additions)
 const FEEDBACK_REASONS = [
   { code: 'too_directive', label: 'Too directive / not exploratory enough' },
   { code: 'missed_emotion', label: 'Missed emotional cue' },
@@ -28,7 +30,27 @@ const FEEDBACK_REASONS = [
   { code: 'should_contain', label: 'Should have contained, not explored' },
   { code: 'missed_ktm', label: 'Missed KTM reinforcement opportunity' },
   { code: 'off_modality', label: 'Off-modality language or technique' },
+  { code: 'too_long', label: 'Response too long' },
+  { code: 'too_short', label: 'Response too short' },
+  { code: 'boundary_violation', label: 'Boundary violation' },
+  { code: 'safety_miss', label: 'Missed safety concern' },
+  { code: 'excellent', label: 'Excellent response' },
   { code: 'other', label: 'Other' }
+]
+
+// Reason codes for safety tier overrides
+const SAFETY_OVERRIDE_REASONS = [
+  { code: 'too_aggressive', label: 'Too aggressive (false positive)' },
+  { code: 'too_permissive', label: 'Too permissive (missed risk)' },
+  { code: 'context_dependent', label: 'Context-dependent (I know this client)' },
+  { code: 'misread_intent', label: 'Misread client intent' },
+  { code: 'other', label: 'Other' }
+]
+
+const TIER_OPTIONS = [
+  { value: 'TIER_1', label: 'TIER_1 — Normal engagement' },
+  { value: 'TIER_2', label: 'TIER_2 — Elevated concern (contain/soften)' },
+  { value: 'TIER_3', label: 'TIER_3 — Crisis (988 + therapist alert)' }
 ]
 
 export default function PreSession({ therapist, client, onClientUpdate }) {
@@ -61,6 +83,11 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
   const [feedbackOpen, setFeedbackOpen] = useState(null)
   const [exchangeFeedback, setExchangeFeedback] = useState({})
   const [selectedReasons, setSelectedReasons] = useState({}) // { exchangeIndex: ['reason_code', ...] }
+  const [editedResponses, setEditedResponses] = useState({}) // { exchangeIndex: 'what AI should have said' }
+
+  // Safety override state
+  const [safetyOverrideOpen, setSafetyOverrideOpen] = useState(null) // Which exchange index is showing override UI
+  const [safetyOverrides, setSafetyOverrides] = useState({}) // { exchangeIndex: { tier: 'TIER_X', reason: 'code' } }
 
   useEffect(() => {
     loadData()
@@ -83,13 +110,25 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
     }
   }
 
-  // Mark exchange as "Good"
+  // Mark exchange as "Good" - writes to response_reviews table
   async function handleMarkGood(exchange, index) {
     try {
       if (exchange.ai?.id) {
-        await updateMessage(exchange.ai.id, { 
+        await updateMessage(exchange.ai.id, {
           review_status: 'approved',
-          flagged_for_review: false 
+          flagged_for_review: false
+        })
+
+        // Write to response_reviews for preference learning
+        await createResponseReview({
+          therapist_id: therapist?.id || DEMO_THERAPIST_ID,
+          client_id: client?.id || DEMO_CLIENT_ID,
+          message_id: exchange.ai.id,
+          action: 'approved',
+          original_response: exchange.ai.content,
+          edited_response: null,
+          reason_codes: ['excellent'],
+          feeds_dsp: true
         })
       }
       setReviewedExchanges(prev => ({ ...prev, [index]: 'good' }))
@@ -103,10 +142,11 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
     setFeedbackOpen(feedbackOpen === index ? null : index)
   }
 
-  // Submit feedback for a specific exchange
+  // Submit feedback for a specific exchange - writes to response_reviews table
   async function handleSubmitExchangeFeedback(exchange, index) {
     const reasons = selectedReasons[index] || []
-    const feedback = exchangeFeedback[index] || ''
+    const editedResponse = editedResponses[index] || null
+    const otherComment = exchangeFeedback[index] || null
 
     // Require at least one reason code
     if (reasons.length === 0) {
@@ -114,27 +154,62 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
       return
     }
 
-    // Store reasons + optional comment as JSON in therapist_feedback field
-    const feedbackData = JSON.stringify({
-      reasons: reasons,
-      comment: feedback || null,
-      timestamp: new Date().toISOString()
-    })
-
     try {
       if (exchange.ai?.id) {
+        // Update the message status
         await updateMessage(exchange.ai.id, {
           review_status: 'needs_improvement',
-          therapist_feedback: feedbackData,
           flagged_for_review: false
+        })
+
+        // Write to response_reviews for preference learning
+        await createResponseReview({
+          therapist_id: therapist?.id || DEMO_THERAPIST_ID,
+          client_id: client?.id || DEMO_CLIENT_ID,
+          message_id: exchange.ai.id,
+          action: editedResponse ? 'edited' : 'flagged',
+          original_response: exchange.ai.content,
+          edited_response: editedResponse,
+          reason_codes: reasons,
+          feeds_dsp: true,
+          notes: otherComment
         })
       }
       setReviewedExchanges(prev => ({ ...prev, [index]: 'needs_work' }))
       setFeedbackOpen(null)
       setSelectedReasons(prev => ({ ...prev, [index]: [] }))
+      setEditedResponses(prev => ({ ...prev, [index]: '' }))
       setExchangeFeedback(prev => ({ ...prev, [index]: '' }))
     } catch (error) {
       console.error('Error submitting feedback:', error)
+    }
+  }
+
+  // Submit safety override - writes to safety_overrides table
+  async function handleSubmitSafetyOverride(exchange, index) {
+    const override = safetyOverrides[index]
+    if (!override?.tier || !override?.reason) {
+      alert('Please select both a tier and a reason.')
+      return
+    }
+
+    try {
+      await createSafetyOverride({
+        therapist_id: therapist?.id || DEMO_THERAPIST_ID,
+        client_id: client?.id || DEMO_CLIENT_ID,
+        message_id: exchange.user.id,
+        original_tier: exchange.ai?.tier || 'TIER_1',
+        corrected_tier: override.tier,
+        client_message_text: exchange.user.content,
+        reason_code: override.reason
+      })
+
+      setSafetyOverrideOpen(null)
+      setSafetyOverrides(prev => ({ ...prev, [index]: {} }))
+      alert('Safety override saved. This feedback will help improve safety routing.')
+    } catch (error) {
+      console.error('Error submitting safety override:', error)
+      alert('Error saving override. Please try again.')
     }
   }
 
@@ -562,11 +637,27 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
                     <span style={{ fontSize: 13, color: 'var(--warm-gray)' }}>
                       {new Date(exchange.user.created_at).toLocaleDateString()}
                     </span>
-                    {exchange.ai?.tier && exchange.ai.tier !== 'TIER_1' && (
-                      <span className={`badge tier${exchange.ai.tier.toLowerCase().replace('tier_', '')}`}>
-                        {exchange.ai.tier}
+                    {/* Tier badge with override button */}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span className={`badge tier${(exchange.ai?.tier || 'TIER_1').toLowerCase().replace('tier_', '')}`}>
+                        {exchange.ai?.tier || 'TIER_1'}
                       </span>
-                    )}
+                      <button
+                        onClick={() => setSafetyOverrideOpen(safetyOverrideOpen === i ? null : i)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: 11,
+                          color: 'var(--warm-gray)',
+                          padding: '2px 6px',
+                          borderRadius: 4
+                        }}
+                        title="Override safety classification"
+                      >
+                        Override
+                      </button>
+                    </span>
                     {reviewedExchanges[i] && (
                       <span className={`badge ${reviewedExchanges[i] === 'good' ? 'success' : 'warning'}`}>
                         {reviewedExchanges[i] === 'good' ? '👍 Approved' : '👎 Feedback Sent'}
@@ -577,6 +668,84 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
                     <span className="badge warning">Flagged</span>
                   )}
                 </div>
+
+                {/* Safety override panel */}
+                {safetyOverrideOpen === i && (
+                  <div style={{ margin: '12px 0', padding: 12, background: '#E3F2FD', borderRadius: 8, border: '1px solid #90CAF9' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 8, color: '#1565C0', fontSize: 13 }}>
+                      Override Safety Classification
+                    </div>
+                    <div style={{ fontSize: 12, color: '#1976D2', marginBottom: 12 }}>
+                      Current: <strong>{exchange.ai?.tier || 'TIER_1'}</strong> — What should it be?
+                    </div>
+                    <div className="flex gap-12 mb-12">
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: 11, color: '#1565C0', marginBottom: 4 }}>Correct Tier</label>
+                        <select
+                          value={safetyOverrides[i]?.tier || ''}
+                          onChange={(e) => setSafetyOverrides(prev => ({
+                            ...prev,
+                            [i]: { ...prev[i], tier: e.target.value }
+                          }))}
+                          style={{
+                            width: '100%',
+                            padding: '6px 10px',
+                            fontSize: 13,
+                            border: '1px solid #90CAF9',
+                            borderRadius: 6,
+                            background: 'white'
+                          }}
+                        >
+                          <option value="">Select tier...</option>
+                          {TIER_OPTIONS.map(tier => (
+                            <option key={tier.value} value={tier.value}>{tier.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: 11, color: '#1565C0', marginBottom: 4 }}>Reason</label>
+                        <select
+                          value={safetyOverrides[i]?.reason || ''}
+                          onChange={(e) => setSafetyOverrides(prev => ({
+                            ...prev,
+                            [i]: { ...prev[i], reason: e.target.value }
+                          }))}
+                          style={{
+                            width: '100%',
+                            padding: '6px 10px',
+                            fontSize: 13,
+                            border: '1px solid #90CAF9',
+                            borderRadius: 6,
+                            background: 'white'
+                          }}
+                        >
+                          <option value="">Select reason...</option>
+                          {SAFETY_OVERRIDE_REASONS.map(reason => (
+                            <option key={reason.code} value={reason.code}>{reason.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-8">
+                      <button
+                        className="btn small"
+                        onClick={() => handleSubmitSafetyOverride(exchange, i)}
+                        style={{ background: '#1565C0', color: 'white' }}
+                      >
+                        Save Override
+                      </button>
+                      <button
+                        className="btn small ghost"
+                        onClick={() => {
+                          setSafetyOverrideOpen(null)
+                          setSafetyOverrides(prev => ({ ...prev, [i]: {} }))
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="excerpt-client">
                   <div className="excerpt-label">Client</div>
                   <div className="excerpt-text">{exchange.user.content}</div>
@@ -595,7 +764,7 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
                       What needed improvement?
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-                      {FEEDBACK_REASONS.map(reason => (
+                      {FEEDBACK_REASONS.filter(r => r.code !== 'excellent').map(reason => (
                         <label
                           key={reason.code}
                           style={{
@@ -620,16 +789,39 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
                         </label>
                       ))}
                     </div>
+
+                    {/* "Other" comment field - shown when Other is selected */}
                     {(selectedReasons[i] || []).includes('other') && (
+                      <div style={{ marginBottom: 12 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#F57C00', marginBottom: 6 }}>
+                          Please describe the issue:
+                        </label>
+                        <textarea
+                          className="form-textarea"
+                          placeholder="Describe what was wrong with this response..."
+                          rows="2"
+                          value={exchangeFeedback[i] || ''}
+                          onChange={(e) => setExchangeFeedback(prev => ({ ...prev, [i]: e.target.value }))}
+                          style={{ fontSize: 13 }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Edited response field - what should the AI have said? */}
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#F57C00', marginBottom: 6 }}>
+                        What should the AI have said instead? (optional but valuable)
+                      </label>
                       <textarea
                         className="form-textarea"
-                        placeholder="Describe the issue..."
-                        rows="2"
-                        value={exchangeFeedback[i] || ''}
-                        onChange={(e) => setExchangeFeedback(prev => ({ ...prev, [i]: e.target.value }))}
-                        style={{ marginBottom: 12 }}
+                        placeholder="Type the response you would have preferred..."
+                        rows="3"
+                        value={editedResponses[i] || ''}
+                        onChange={(e) => setEditedResponses(prev => ({ ...prev, [i]: e.target.value }))}
+                        style={{ fontSize: 13 }}
                       />
-                    )}
+                    </div>
+
                     <div className="flex gap-8">
                       <button
                         className="btn small primary"
@@ -643,6 +835,7 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
                         onClick={() => {
                           setFeedbackOpen(null)
                           setSelectedReasons(prev => ({ ...prev, [i]: [] }))
+                          setEditedResponses(prev => ({ ...prev, [i]: '' }))
                         }}
                       >
                         Cancel
