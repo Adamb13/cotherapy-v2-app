@@ -1,0 +1,60 @@
+# CoTherapy.ai — Claude Code Context
+
+## What This Is
+Therapist-supervised AI for intersession client support. React 18 + Vite 6 + Supabase + Vercel + Claude API.
+
+## How to Work With Me (The Founder)
+I am a psychiatrist, not an engineer. Before making any code change:
+1. Explain WHAT you're about to do in plain language (not code)
+2. Explain WHY — what problem does this solve and how does it fit the architecture
+3. If it touches the database, explain the schema change and why it matters
+4. After making the change, explain what happened and how to verify it works
+5. If you're making a choice between approaches, explain the tradeoffs so I learn
+
+Never assume I understand technical jargon. Use analogies when helpful.
+
+## Safety Rules (Never Violate)
+- Route E crisis response MUST include 988 hotline number
+- Hardcoded fallback crisis response must exist independent of AI
+- Post-crisis mode blocks ALL chat until therapist reviews
+- Client cannot chat unless dyad status is ACTIVE
+- Safety route priority: E → D → B → C → A (most dangerous first)
+- Never modify safety patterns in ai.js without explicit approval
+
+## Regulatory Language (Never Violate)
+- AI is a "coaching companion" — NEVER "therapist" or "counselor"
+- Interactions are "coaching" or "reinforcement" — NEVER "therapy" or "treatment"
+- AI "reinforces session themes" — NEVER "provides treatment"
+- The therapist is the clinical authority. AI NEVER claims clinical authority
+- See /docs/context/regulatory.md for full CURES framework and prohibited language
+
+## Data Asset Rule
+Every therapist action (approve, edit, reject, override) MUST write a structured record with a reason code to the appropriate review table. This is core data flow, not optional logging.
+
+## Key Files
+- ai.js — Safety routing + Claude API + system prompt assembly
+- db.js — All Supabase queries, Policy Pack, dyad state machine
+- ClientChat.jsx — Client chat with dyad state checks
+- PostSession.jsx — Session notes → moments → KTMs → review
+- PreSession.jsx — Chat review, feedback, DSP feedback, config history
+- TherapistSettings.jsx — Therapist onboarding wizard
+- ClientOnboarding.jsx — Client management + activation
+
+## Deeper Documentation (Read Before Modifying These Areas)
+Context (rules and constraints):
+- /docs/context/regulatory.md — CURES framework, FDA positioning, language rules
+- /docs/context/architecture.md — Data architecture, memory tiers, preference learning schema
+
+Skills (how we do things here):
+- /docs/skills/safety-routing.md — Full 5-route system, regex patterns, crisis handling
+- /docs/skills/prompting.md — System prompt assembly, DSP injection, token limits
+- /docs/skills/supabase-patterns.md — Schema, JSONB patterns, query patterns
+- /docs/skills/deployment.md — Vercel, GitHub, Supabase SQL-first workflow
+
+## Coding Standards
+- Plain JavaScript (no TypeScript)
+- Supabase client for all DB operations
+- API keys server-side only (Vercel env vars)
+- Commits: feat:/fix:/refactor: prefix
+- Each feature = one commit
+- Database changes in Supabase SQL Editor BEFORE code changes
