@@ -5,6 +5,9 @@
 // Route D: Block + Redirect — decline topic, redirect to approved scope
 // Route E: Escalate — crisis protocol with therapist alert and post-crisis mode
 
+// Model version constant for audit trail
+export const MODEL_VERSION = 'claude-sonnet-4-20250514'
+
 const ROUTE_E_PATTERNS = [
   // Active suicidal ideation with plan/intent
   /\b(kill(ing)? myself|end(ing)? (my )?life|end(ing)? it|want to die|going to die)\b/i,
@@ -295,7 +298,8 @@ export async function generateResponse(userMessage, therapist, conversationHisto
           route: 'E',
           tier: 'TIER_3',
           tierReason: reason,
-          flagged: true
+          flagged: true,
+          modelVersion: MODEL_VERSION
         }
       }
     }
@@ -305,7 +309,8 @@ export async function generateResponse(userMessage, therapist, conversationHisto
       route,
       tier,
       tierReason: reason,
-      flagged: route !== 'A'
+      flagged: route !== 'A',
+      modelVersion: MODEL_VERSION
     }
   } catch (error) {
     console.error('Chat API error:', error)
@@ -317,7 +322,8 @@ export async function generateResponse(userMessage, therapist, conversationHisto
         route: 'E',
         tier: 'TIER_3',
         tierReason: 'Crisis protocol - API fallback',
-        flagged: true
+        flagged: true,
+        modelVersion: MODEL_VERSION
       }
     }
 
@@ -456,5 +462,5 @@ export function generateMockResponse(userMessage, therapist, client = null) {
   const responses = ROUTE_RESPONSES[route] || ROUTE_RESPONSES.A
   const content = responses[Math.floor(Math.random() * responses.length)]
 
-  return { content, route, tier, tierReason: reason, flagged: route !== 'A' }
+  return { content, route, tier, tierReason: reason, flagged: route !== 'A', modelVersion: 'mock' }
 }

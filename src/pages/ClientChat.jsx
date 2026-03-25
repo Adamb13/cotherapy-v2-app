@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getMessagesForClient, createMessage, getKTMsForClient, getTodaysTurnCount, getMaxTurnsPerDay, setPostCrisisMode, getDyadStatus, DYAD_STATES, DYAD_STATE_INFO } from '../lib/db'
+import { getMessagesForClient, createMessage, getKTMsForClient, getTodaysTurnCount, getMaxTurnsPerDay, setPostCrisisMode, getDyadStatus, DYAD_STATES, DYAD_STATE_INFO, getCurrentPolicyVersion } from '../lib/db'
 import { generateResponse, generateMockResponse } from '../lib/ai'
 import { DEMO_CLIENT_ID } from '../lib/supabase'
 
@@ -93,14 +93,17 @@ export default function ClientChat({ client, therapist }) {
         aiResponse = generateMockResponse(userMessage, therapist, client)
       }
 
-      // Save AI response to database
+      // Save AI response to database with full audit trail
       const savedAiMsg = await createMessage({
         client_id: DEMO_CLIENT_ID,
         role: 'assistant',
         content: aiResponse.content,
         tier: aiResponse.tier,
         tier_reason: aiResponse.tierReason,
-        // route: aiResponse.route, // Column doesn't exist in DB yet
+        route: aiResponse.route,
+        policy_pack_version: getCurrentPolicyVersion(client)?.toString() || null,
+        model_version: aiResponse.modelVersion,
+        safety_score: null, // Placeholder for future use
         flagged_for_review: aiResponse.flagged,
         is_post_crisis: aiResponse.route === 'E',
         therapist_reviewed: false
