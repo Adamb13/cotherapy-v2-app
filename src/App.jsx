@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTherapist, getClient, getAllClientsForTherapist, getDyadStatus, DYAD_STATES } from './lib/db'
+import { getTherapist, getClient, getAllClientsForTherapist, getDyadStatus, DYAD_STATES, getNotifications, markNotificationRead } from './lib/db'
 import { DEMO_THERAPIST_ID } from './lib/supabase'
 import TherapistSettings from './pages/TherapistSettings'
 import ClientOnboarding from './pages/ClientOnboarding'
@@ -21,6 +21,8 @@ function App() {
   const [clients, setClients] = useState([])
   const [showClientSelector, setShowClientSelector] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [notifications, setNotifications] = useState([])
+  const [showNotifications, setShowNotifications] = useState(false)
 
   useEffect(() => {
     if (sessionStorage.getItem('cotherapy_auth') === 'true') {
@@ -47,20 +49,47 @@ function App() {
 
   async function loadData() {
     try {
-      const [t, c, allClients] = await Promise.all([
+      const [t, c, allClients, notifs] = await Promise.all([
         getTherapist(),
         getClient(),
-        getAllClientsForTherapist(DEMO_THERAPIST_ID)
+        getAllClientsForTherapist(DEMO_THERAPIST_ID),
+        getNotifications(DEMO_THERAPIST_ID)
       ])
       setTherapist(t)
       setClient(c)
       // Show all non-terminated clients (including invited, pending_config, paused)
       setClients(allClients.filter(cl => getDyadStatus(cl) !== DYAD_STATES.TERMINATED))
+      setNotifications(notifs)
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  // Refresh notifications (called after actions that might generate notifications)
+  async function refreshNotifications() {
+    const notifs = await getNotifications(DEMO_THERAPIST_ID)
+    setNotifications(notifs)
+  }
+
+  // Handle notification click - mark as read and navigate
+  async function handleNotificationClick(notification) {
+    // Mark as read
+    await markNotificationRead(notification.id)
+
+    // Find the client and select them
+    const notifClient = clients.find(c => c.id === notification.client_id)
+    if (notifClient) {
+      setClient(notifClient)
+    }
+
+    // Navigate to pre-session review
+    setCurrentView('pre-session')
+    setShowNotifications(false)
+
+    // Refresh notifications to update unread count
+    refreshNotifications()
   }
 
   // Reload clients when returning from client onboarding
@@ -243,6 +272,139 @@ function App() {
                         {c.display_name || 'Unnamed'}
                       </button>
                     ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Notification Bell (Therapist view only) */}
+          {userType === 'therapist' && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 36,
+                  height: 36,
+                  background: showNotifications ? 'var(--sage-light)' : 'transparent',
+                  border: '1px solid var(--sand-dark)',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  position: 'relative'
+                }}
+                title="Notifications"
+              >
+                <span style={{ fontSize: 18 }}>🔔</span>
+                {notifications.filter(n => !n.read).length > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    background: '#C62828',
+                    color: 'white',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    minWidth: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 4px'
+                  }}>
+                    {notifications.filter(n => !n.read).length}
+                  </span>
+                )}
+              </button>
+              {showNotifications && (
+                <>
+                  <div
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
+                    onClick={() => setShowNotifications(false)}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: 4,
+                    background: 'white',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                    border: '1px solid var(--sand-dark)',
+                    width: 320,
+                    maxHeight: 400,
+                    overflow: 'auto',
+                    zIndex: 100
+                  }}>
+                    <div style={{
+                      padding: '12px 16px',
+                      borderBottom: '1px solid var(--sand)',
+                      fontWeight: 600,
+                      fontSize: 14
+                    }}>
+                      Notifications
+                    </div>
+                    {notifications.length === 0 ? (
+                      <div style={{
+                        padding: 24,
+                        textAlign: 'center',
+                        color: 'var(--warm-gray)',
+                        fontSize: 13
+                      }}>
+                        No notifications
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <button
+                          key={n.id}
+                          onClick={() => handleNotificationClick(n)}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: '12px 16px',
+                            background: n.read ? 'transparent' : '#FFF8E1',
+                            border: 'none',
+                            borderBottom: '1px solid var(--sand)',
+                            cursor: 'pointer',
+                            textAlign: 'left'
+                          }}
+                        >
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 10
+                          }}>
+                            <span style={{ fontSize: 16 }}>
+                              {n.type === 'crisis_detected' ? '🚨' : n.type === 'review_needed' ? '📋' : '✓'}
+                            </span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{
+                                fontSize: 13,
+                                fontWeight: n.read ? 400 : 600,
+                                color: n.type === 'crisis_detected' ? '#C62828' : 'inherit',
+                                marginBottom: 4
+                              }}>
+                                {n.message}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--warm-gray)' }}>
+                                {new Date(n.created_at).toLocaleString()}
+                              </div>
+                            </div>
+                            {!n.read && (
+                              <span style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 4,
+                                background: '#C62828'
+                              }} />
+                            )}
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </>
               )}

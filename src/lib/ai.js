@@ -5,6 +5,8 @@
 // Route D: Block + Redirect — decline topic, redirect to approved scope
 // Route E: Escalate — crisis protocol with therapist alert and post-crisis mode
 
+import { createNotification, NOTIFICATION_TYPES } from './db'
+
 // Model version constant for audit trail
 export const MODEL_VERSION = 'claude-sonnet-4-20250514'
 
@@ -308,6 +310,26 @@ You may:
 // Hardcoded crisis response for safety fallback
 const CRISIS_RESPONSE = "I'm concerned about what you're sharing, and I want to make sure you're safe. Please reach out to the 988 Suicide & Crisis Lifeline by calling or texting 988. Your therapist has been notified and will follow up with you. You don't have to go through this alone."
 
+// Create crisis notification for therapist (called when Route E triggers)
+async function notifyTherapistOfCrisis(client) {
+  if (!client?.therapist_id || !client?.id) {
+    console.warn('Cannot create crisis notification: missing client or therapist info')
+    return
+  }
+
+  try {
+    await createNotification({
+      therapist_id: client.therapist_id,
+      client_id: client.id,
+      type: NOTIFICATION_TYPES.CRISIS_DETECTED,
+      message: `Crisis protocol activated for ${client.display_name || 'client'}. Post-crisis mode enabled. Review required.`
+    })
+  } catch (error) {
+    console.error('Failed to create crisis notification:', error)
+    // Don't throw - notification failure shouldn't break crisis response
+  }
+}
+
 // Generate real response using secure API endpoint
 export async function generateResponse(userMessage, therapist, conversationHistory = [], ktms = [], client = null) {
   const { route, tier, reason } = detectRoute(userMessage, client)
@@ -352,6 +374,9 @@ export async function generateResponse(userMessage, therapist, conversationHisto
     // SAFETY NET: If regex detected crisis (Route E), verify AI response contains crisis resources
     // If not, override with hardcoded crisis response
     if (route === 'E') {
+      // Notify therapist of crisis (async, don't await - notification shouldn't block response)
+      notifyTherapistOfCrisis(client)
+
       const hasResources = /988|crisis|lifeline|emergency|therapist.*notified/i.test(data.content)
       if (!hasResources) {
         console.warn('Route E detected but AI response missing crisis resources - using fallback')
@@ -379,6 +404,9 @@ export async function generateResponse(userMessage, therapist, conversationHisto
 
     // Fallback for errors - use hardcoded crisis response if Route E
     if (route === 'E') {
+      // Notify therapist of crisis even on API error
+      notifyTherapistOfCrisis(client)
+
       return {
         content: CRISIS_RESPONSE,
         route: 'E',
