@@ -85,9 +85,13 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
     loadClients() // Refresh list
   }
 
-  const dyadStatus = selectedClient ? getDyadStatus(selectedClient) : DYAD_STATES.PENDING_CONFIG
+  const dyadStatus = selectedClient ? getDyadStatus(selectedClient) : DYAD_STATES.INVITED
   const isAlreadyActive = dyadStatus === DYAD_STATES.ACTIVE
   const isNewClient = !selectedClient
+  const isInvited = dyadStatus === DYAD_STATES.INVITED
+  const isPendingConfig = dyadStatus === DYAD_STATES.PENDING_CONFIG
+  // Can only activate if client has accepted consent (pending_config) or is already active
+  const canActivate = isPendingConfig || isAlreadyActive
 
   async function handleSaveAndActivate() {
     setSaving(true)
@@ -174,12 +178,12 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
         dsp_adjustments: dspAdjustments
       })
 
-      // Update parent if this is the demo client
-      if (onClientUpdate && updated.id === client?.id) {
+      // Always notify parent to refresh client list (for new clients to appear in selector)
+      if (onClientUpdate) {
         onClientUpdate(updated)
       }
 
-      alert('Client settings saved.')
+      alert('Client saved. ' + (isNewClient ? 'They can now accept the consent form.' : 'Changes saved.'))
       backToList()
     } catch (error) {
       console.error('Error saving client:', error)
@@ -540,6 +544,31 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
               </div>
             </div>
           )}
+
+          {(isNewClient || isInvited) && (
+            <div className="card mt-24" style={{ padding: 16, background: '#FFF8E1', border: '1px solid #FFE082' }}>
+              <div className="flex items-center gap-12">
+                <span style={{ fontSize: 20 }}>📧</span>
+                <div style={{ fontSize: 13, color: '#F57C00' }}>
+                  {isNewClient
+                    ? 'Save the client first. They\'ll need to accept the consent form before you can activate them.'
+                    : 'Waiting for client to accept consent. You can activate them once they\'ve agreed to the terms.'
+                  }
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isPendingConfig && (
+            <div className="card mt-24" style={{ padding: 16, background: '#E8F5E9', border: '1px solid #A5D6A7' }}>
+              <div className="flex items-center gap-12">
+                <span style={{ fontSize: 20 }}>✓</span>
+                <div style={{ fontSize: 13, color: '#2E7D32' }}>
+                  Client has accepted consent. You can now activate them to begin intersession support.
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -561,12 +590,31 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
           </button>
         ) : (
           <div className="flex gap-12">
-            <button className="btn secondary" onClick={handleSaveOnly} disabled={saving}>
-              Save Only
-            </button>
-            <button className="btn primary" onClick={handleSaveAndActivate} disabled={saving}>
-              {saving ? 'Saving...' : isAlreadyActive ? 'Save & Update' : 'Activate Client ✓'}
-            </button>
+            {/* New clients or invited: Only save, no activation */}
+            {(isNewClient || isInvited) && (
+              <button className="btn primary" onClick={handleSaveOnly} disabled={saving}>
+                {saving ? 'Saving...' : isNewClient ? 'Save Client' : 'Save Changes'}
+              </button>
+            )}
+
+            {/* Pending config: Can save or activate */}
+            {isPendingConfig && (
+              <>
+                <button className="btn secondary" onClick={handleSaveOnly} disabled={saving}>
+                  Save Only
+                </button>
+                <button className="btn primary" onClick={handleSaveAndActivate} disabled={saving}>
+                  {saving ? 'Saving...' : 'Activate Client ✓'}
+                </button>
+              </>
+            )}
+
+            {/* Already active: Just update */}
+            {isAlreadyActive && (
+              <button className="btn primary" onClick={handleSaveAndActivate} disabled={saving}>
+                {saving ? 'Saving...' : 'Save & Update'}
+              </button>
+            )}
           </div>
         )}
       </div>
