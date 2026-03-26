@@ -414,7 +414,7 @@ function App() {
           <div className="view-toggle">
             <button
               className={userType === 'therapist' ? 'active' : ''}
-              onClick={() => { setUserType('therapist'); setCurrentView('settings'); }}
+              onClick={() => { setUserType('therapist'); setCurrentView('settings'); refreshNotifications(); }}
             >
               Therapist
             </button>
@@ -448,7 +448,7 @@ function App() {
               }}
             />
           ) : (
-            <ClientChat client={client} therapist={therapist} />
+            <ClientChat client={client} therapist={therapist} onClientUpdate={setClient} />
           )
         ) : (
           <>

@@ -3,7 +3,7 @@ import { getMessagesForClient, createMessage, getKTMsForClient, getTodaysTurnCou
 import { generateResponse, generateMockResponse } from '../lib/ai'
 import { DEMO_CLIENT_ID } from '../lib/supabase'
 
-export default function ClientChat({ client, therapist }) {
+export default function ClientChat({ client, therapist, onClientUpdate }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(true)
@@ -13,6 +13,7 @@ export default function ClientChat({ client, therapist }) {
   const [turnCount, setTurnCount] = useState(0)
   const [showDebug, setShowDebug] = useState(true) // Demo mode - shows route/tier info
   const [reviewedSessionCount, setReviewedSessionCount] = useState(null) // null = loading
+  const [justTriggeredCrisis, setJustTriggeredCrisis] = useState(false) // Local state for immediate post-crisis display
   const maxTurns = getMaxTurnsPerDay(client)
   const messagesEndRef = useRef(null)
 
@@ -114,8 +115,11 @@ export default function ClientChat({ client, therapist }) {
 
       // Trigger post-crisis mode if Route E
       if (aiResponse.route === 'E') {
-        await setPostCrisisMode(DEMO_CLIENT_ID, true)
-        // The UI will update on next render when client prop changes
+        const updatedClient = await setPostCrisisMode(DEMO_CLIENT_ID, true)
+        setJustTriggeredCrisis(true) // Immediately show post-crisis screen
+        if (onClientUpdate) {
+          onClientUpdate(updatedClient) // Notify parent to update client state
+        }
       }
 
       // Update messages with saved versions
@@ -149,8 +153,8 @@ export default function ClientChat({ client, therapist }) {
     return <div className="loading">Loading chat...</div>
   }
 
-  // Show post-crisis screen if in post-crisis mode
-  if (client?.dsp_adjustments?.is_post_crisis) {
+  // Show post-crisis screen if in post-crisis mode (check both prop and local state)
+  if (client?.dsp_adjustments?.is_post_crisis || justTriggeredCrisis) {
     return (
       <div className="chat-container">
         <div className="chat-header">

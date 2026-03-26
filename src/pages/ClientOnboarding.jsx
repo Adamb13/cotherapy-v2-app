@@ -7,6 +7,8 @@ import {
   DYAD_STATES,
   DYAD_STATE_INFO,
   activateDyad,
+  pauseDyad,
+  resumeDyad,
   createPolicyPackSnapshot,
   POLICY_PACK_TYPES
 } from '../lib/db'
@@ -232,7 +234,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
           {activeClients.length > 0 ? (
             <div className="flex flex-col gap-12">
               {activeClients.map(c => (
-                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} isDemo={c.id === client?.id} />
+                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} isDemo={c.id === client?.id} />
               ))}
             </div>
           ) : (
@@ -250,7 +252,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
             </h3>
             <div className="flex flex-col gap-12">
               {pendingClients.map(c => (
-                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} isDemo={c.id === client?.id} />
+                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} isDemo={c.id === client?.id} />
               ))}
             </div>
           </div>
@@ -264,7 +266,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
             </h3>
             <div className="flex flex-col gap-12">
               {pausedClients.map(c => (
-                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} isDemo={c.id === client?.id} />
+                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} isDemo={c.id === client?.id} />
               ))}
             </div>
           </div>
@@ -623,9 +625,32 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
 }
 
 // Client Card Component
-function ClientCard({ client, onEdit, isDemo }) {
+function ClientCard({ client, onEdit, onPauseResume, isDemo }) {
+  const [toggling, setToggling] = useState(false)
   const dyadStatus = getDyadStatus(client)
   const dyadInfo = DYAD_STATE_INFO[dyadStatus]
+  const canPause = dyadStatus === DYAD_STATES.ACTIVE
+  const canResume = dyadStatus === DYAD_STATES.PAUSED
+
+  async function handlePauseResume(e) {
+    e.stopPropagation() // Prevent card click
+    if (toggling) return
+
+    setToggling(true)
+    try {
+      if (canPause) {
+        await pauseDyad(client.id, 'Paused by therapist')
+      } else if (canResume) {
+        await resumeDyad(client.id, 'Resumed by therapist')
+      }
+      if (onPauseResume) onPauseResume()
+    } catch (error) {
+      console.error('Error toggling pause:', error)
+      alert('Error updating client status')
+    } finally {
+      setToggling(false)
+    }
+  }
 
   return (
     <div
@@ -674,6 +699,24 @@ function ClientCard({ client, onEdit, isDemo }) {
           </div>
         </div>
         <div className="flex items-center gap-12">
+          {/* Pause/Resume button for active or paused clients */}
+          {(canPause || canResume) && (
+            <button
+              onClick={handlePauseResume}
+              disabled={toggling}
+              style={{
+                padding: '4px 12px',
+                fontSize: 12,
+                background: canPause ? '#FFF3E0' : '#E8F5E9',
+                color: canPause ? '#E65100' : '#2E7D32',
+                border: `1px solid ${canPause ? '#FFCC80' : '#A5D6A7'}`,
+                borderRadius: 6,
+                cursor: toggling ? 'wait' : 'pointer'
+              }}
+            >
+              {toggling ? '...' : canPause ? '⏸ Pause' : '▶ Resume'}
+            </button>
+          )}
           <span style={{
             padding: '4px 10px',
             background: dyadInfo?.color + '15',
