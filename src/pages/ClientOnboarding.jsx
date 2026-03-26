@@ -234,7 +234,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
           {activeClients.length > 0 ? (
             <div className="flex flex-col gap-12">
               {activeClients.map(c => (
-                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} isDemo={c.id === client?.id} />
+                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} onClientUpdate={onClientUpdate} isSelected={c.id === client?.id} isDemo={c.id === client?.id} />
               ))}
             </div>
           ) : (
@@ -252,7 +252,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
             </h3>
             <div className="flex flex-col gap-12">
               {pendingClients.map(c => (
-                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} isDemo={c.id === client?.id} />
+                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} onClientUpdate={onClientUpdate} isSelected={c.id === client?.id} isDemo={c.id === client?.id} />
               ))}
             </div>
           </div>
@@ -266,7 +266,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
             </h3>
             <div className="flex flex-col gap-12">
               {pausedClients.map(c => (
-                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} isDemo={c.id === client?.id} />
+                <ClientCard key={c.id} client={c} onEdit={() => selectClientForEdit(c)} onPauseResume={loadClients} onClientUpdate={onClientUpdate} isSelected={c.id === client?.id} isDemo={c.id === client?.id} />
               ))}
             </div>
           </div>
@@ -625,7 +625,7 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
 }
 
 // Client Card Component
-function ClientCard({ client, onEdit, onPauseResume, isDemo }) {
+function ClientCard({ client, onEdit, onPauseResume, onClientUpdate, isDemo, isSelected }) {
   const [toggling, setToggling] = useState(false)
   const dyadStatus = getDyadStatus(client)
   const dyadInfo = DYAD_STATE_INFO[dyadStatus]
@@ -638,10 +638,15 @@ function ClientCard({ client, onEdit, onPauseResume, isDemo }) {
 
     setToggling(true)
     try {
+      let updatedClient
       if (canPause) {
-        await pauseDyad(client.id, 'Paused by therapist')
+        updatedClient = await pauseDyad(client.id, 'Paused by therapist')
       } else if (canResume) {
-        await resumeDyad(client.id, 'Resumed by therapist')
+        updatedClient = await resumeDyad(client.id, 'Resumed by therapist')
+      }
+      // If this is the currently selected client, update App.jsx state
+      if (isSelected && onClientUpdate && updatedClient) {
+        onClientUpdate(updatedClient)
       }
       if (onPauseResume) onPauseResume()
     } catch (error) {

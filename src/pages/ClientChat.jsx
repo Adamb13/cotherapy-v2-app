@@ -222,9 +222,9 @@ export default function ClientChat({ client, therapist, onClientUpdate }) {
       },
       [DYAD_STATES.PAUSED]: {
         icon: '⏸',
-        title: 'Support Temporarily Paused',
-        message: 'Your therapist has temporarily paused AI support. This is often done during important treatment transitions. Your therapist will let you know when it resumes.',
-        badge: 'Paused'
+        title: 'AI Support on Hold',
+        message: 'Your therapist has temporarily paused AI chat support. They\'ll let you know when it\'s available again. In the meantime, reach out directly if you need anything.',
+        badge: 'On Hold'
       },
       [DYAD_STATES.TERMINATED]: {
         icon: '✕',
