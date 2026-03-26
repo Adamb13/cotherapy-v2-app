@@ -93,7 +93,7 @@ export async function getAllClientsForTherapist(therapistId = DEMO_THERAPIST_ID)
   return data || []
 }
 
-// Create a new client
+// Create a new client (starts in 'invited' state - client must accept consent first)
 export async function createClient(clientData) {
   const { data, error } = await supabase
     .from('clients')
@@ -101,7 +101,7 @@ export async function createClient(clientData) {
       ...clientData,
       is_active: false,
       dsp_adjustments: {
-        dyad_status: DYAD_STATES.PENDING_CONFIG,
+        dyad_status: DYAD_STATES.INVITED,
         max_turns_per_day: 20
       },
       created_at: new Date().toISOString(),
@@ -583,6 +583,54 @@ export async function resumeDyad(clientId, reason = 'Resumed by therapist') {
 // Helper: Terminate a client
 export async function terminateDyad(clientId, reason = 'Terminated by therapist') {
   return transitionDyadStatus(clientId, DYAD_STATES.TERMINATED, reason)
+}
+
+// Helper: Client accepts consent (INVITED → PENDING_CONFIG)
+// Stores consent_accepted_at timestamp in dsp_adjustments
+export async function acceptClientConsent(clientId) {
+  // Get current client
+  const { data: client, error: fetchError } = await supabase
+    .from('clients')
+    .select('dsp_adjustments')
+    .eq('id', clientId)
+    .single()
+
+  if (fetchError) throw fetchError
+
+  // Transition to pending_config and record consent timestamp
+  const updatedClient = await transitionDyadStatus(clientId, DYAD_STATES.PENDING_CONFIG, 'Client accepted consent')
+
+  // Add consent timestamp
+  const updatedAdjustments = {
+    ...(updatedClient?.dsp_adjustments || {}),
+    consent_accepted_at: new Date().toISOString()
+  }
+
+  const { data, error } = await supabase
+    .from('clients')
+    .update({ dsp_adjustments: updatedAdjustments })
+    .eq('id', clientId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Check if client has any completed & reviewed sessions
+// Returns count of sessions where review_completed = true
+export async function getCompletedReviewedSessionCount(clientId) {
+  const { count, error } = await supabase
+    .from('sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('review_completed', true)
+
+  if (error) {
+    console.error('Error counting reviewed sessions:', error)
+    return 0
+  }
+  return count || 0
 }
 
 // ============================================

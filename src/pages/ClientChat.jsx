@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getMessagesForClient, createMessage, getKTMsForClient, getTodaysTurnCount, getMaxTurnsPerDay, setPostCrisisMode, getDyadStatus, DYAD_STATES, DYAD_STATE_INFO, getCurrentPolicyVersion } from '../lib/db'
+import { getMessagesForClient, createMessage, getKTMsForClient, getTodaysTurnCount, getMaxTurnsPerDay, setPostCrisisMode, getDyadStatus, DYAD_STATES, DYAD_STATE_INFO, getCurrentPolicyVersion, getCompletedReviewedSessionCount } from '../lib/db'
 import { generateResponse, generateMockResponse } from '../lib/ai'
 import { DEMO_CLIENT_ID } from '../lib/supabase'
 
@@ -12,6 +12,7 @@ export default function ClientChat({ client, therapist }) {
   const [useRealAI, setUseRealAI] = useState(true) // Using real Claude API
   const [turnCount, setTurnCount] = useState(0)
   const [showDebug, setShowDebug] = useState(true) // Demo mode - shows route/tier info
+  const [reviewedSessionCount, setReviewedSessionCount] = useState(null) // null = loading
   const maxTurns = getMaxTurnsPerDay(client)
   const messagesEndRef = useRef(null)
 
@@ -25,14 +26,16 @@ export default function ClientChat({ client, therapist }) {
 
   async function loadMessages() {
     try {
-      const [msgs, k, turns] = await Promise.all([
+      const [msgs, k, turns, sessionCount] = await Promise.all([
         getMessagesForClient(),
         getKTMsForClient(),
-        getTodaysTurnCount()
+        getTodaysTurnCount(),
+        getCompletedReviewedSessionCount(client?.id || DEMO_CLIENT_ID)
       ])
       setMessages(msgs)
       setKtms(k)
       setTurnCount(turns)
+      setReviewedSessionCount(sessionCount)
     } catch (error) {
       console.error('Error loading messages:', error)
     } finally {
@@ -194,21 +197,24 @@ export default function ClientChat({ client, therapist }) {
   const dyadStatus = getDyadStatus(client)
   const dyadInfo = DYAD_STATE_INFO[dyadStatus]
 
-  // Show screen based on dyad state
-  if (dyadStatus !== DYAD_STATES.ACTIVE) {
+  // Check if active but awaiting first reviewed session
+  const isAwaitingFirstReview = dyadStatus === DYAD_STATES.ACTIVE && reviewedSessionCount === 0
+
+  // Show screen based on dyad state (or awaiting first review)
+  if (dyadStatus !== DYAD_STATES.ACTIVE || isAwaitingFirstReview) {
     // Determine appropriate message based on state
     const stateScreens = {
       [DYAD_STATES.INVITED]: {
         icon: '📧',
-        title: 'Invitation Pending',
-        message: 'Your therapist has invited you to use AI intersession support. Accept the invitation to get started.',
+        title: 'Welcome to CoTherapy',
+        message: 'Your therapist has invited you to CoTherapy. Please review and accept the terms to get started.',
         badge: 'Invited'
       },
       [DYAD_STATES.PENDING_CONFIG]: {
         icon: '⚙️',
-        title: 'Your AI Support is Being Personalized',
-        message: 'Your therapist is configuring your intersession support. You\'ll be notified when it\'s ready.',
-        badge: 'Pending Config'
+        title: 'Your Therapist is Setting Up Your Account',
+        message: 'Your therapist is personalizing your AI experience. You\'ll be able to chat once they complete the setup.',
+        badge: 'Setting Up'
       },
       [DYAD_STATES.PAUSED]: {
         icon: '⏸',
@@ -221,10 +227,19 @@ export default function ClientChat({ client, therapist }) {
         title: 'Support Ended',
         message: 'Your intersession AI support has ended. If you believe this is an error, please contact your therapist.',
         badge: 'Ended'
+      },
+      // Special state: Active but no reviewed sessions yet
+      'awaiting_first_review': {
+        icon: '✨',
+        title: 'Almost Ready!',
+        message: 'Your therapist is preparing your personalized AI experience. You\'ll be able to chat after your therapist reviews your first session together.',
+        badge: 'Preparing'
       }
     }
 
-    const screen = stateScreens[dyadStatus] || stateScreens[DYAD_STATES.PENDING_CONFIG]
+    // Use awaiting_first_review screen if active but no sessions reviewed
+    const screenKey = isAwaitingFirstReview ? 'awaiting_first_review' : dyadStatus
+    const screen = stateScreens[screenKey] || stateScreens[DYAD_STATES.PENDING_CONFIG]
 
     return (
       <div className="chat-container">

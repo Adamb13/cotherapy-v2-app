@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { getTherapist, getClient, getAllClientsForTherapist } from './lib/db'
+import { getTherapist, getClient, getAllClientsForTherapist, getDyadStatus, DYAD_STATES } from './lib/db'
 import { DEMO_THERAPIST_ID } from './lib/supabase'
 import TherapistSettings from './pages/TherapistSettings'
 import ClientOnboarding from './pages/ClientOnboarding'
 import PostSession from './pages/PostSession'
 import PreSession from './pages/PreSession'
 import ClientChat from './pages/ClientChat'
+import ClientConsent from './pages/ClientConsent'
 
 const DEMO_PASSWORD = 'c0Therapy2025!'
 
@@ -53,7 +54,8 @@ function App() {
       ])
       setTherapist(t)
       setClient(c)
-      setClients(allClients.filter(cl => cl.is_active))
+      // Show all non-terminated clients (including invited, pending_config, paused)
+      setClients(allClients.filter(cl => getDyadStatus(cl) !== DYAD_STATES.TERMINATED))
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
@@ -64,7 +66,8 @@ function App() {
   // Reload clients when returning from client onboarding
   async function reloadClients() {
     const allClients = await getAllClientsForTherapist(DEMO_THERAPIST_ID)
-    setClients(allClients.filter(cl => cl.is_active))
+    // Show all non-terminated clients (including invited, pending_config, paused)
+    setClients(allClients.filter(cl => getDyadStatus(cl) !== DYAD_STATES.TERMINATED))
   }
 
   // Password screen
@@ -272,7 +275,19 @@ function App() {
       {/* Main Content */}
       <main>
         {userType === 'client' ? (
-          <ClientChat client={client} therapist={therapist} />
+          // Show consent screen if client is in 'invited' status, otherwise show chat
+          getDyadStatus(client) === DYAD_STATES.INVITED ? (
+            <ClientConsent
+              client={client}
+              therapist={therapist}
+              onConsentAccepted={(updatedClient) => {
+                setClient(updatedClient)
+                reloadClients()
+              }}
+            />
+          ) : (
+            <ClientChat client={client} therapist={therapist} />
+          )
         ) : (
           <>
             {currentView === 'settings' && (
