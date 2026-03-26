@@ -19,6 +19,7 @@ import {
   createResponseReview,
   createSafetyOverride,
   refreshLearnedPreferences,
+  markClientNotificationsRead,
   POLICY_PACK_TYPES
 } from '../lib/db'
 import { DEMO_THERAPIST_ID, DEMO_CLIENT_ID } from '../lib/supabase'
@@ -306,13 +307,17 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
     }
   }
 
-  // Clear post-crisis mode
+  // Clear post-crisis mode and mark crisis notifications as read
   async function handleClearCrisis() {
     if (!client?.id) return
 
     setClearingCrisis(true)
     try {
       const updated = await clearPostCrisisMode(client.id)
+
+      // Mark any crisis notifications for this client as read
+      await markClientNotificationsRead(client.id, therapist?.id || DEMO_THERAPIST_ID)
+
       if (onClientUpdate) {
         onClientUpdate(updated)
       }

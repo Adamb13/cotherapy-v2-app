@@ -910,3 +910,104 @@ export async function refreshLearnedPreferences(therapistId = DEMO_THERAPIST_ID)
 export async function resetLearnedPreferences(therapistId = DEMO_THERAPIST_ID) {
   return await updateTherapistLearnedPreferences(therapistId, {})
 }
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+// Notification types
+export const NOTIFICATION_TYPES = {
+  CRISIS_DETECTED: 'crisis_detected',
+  REVIEW_NEEDED: 'review_needed',
+  CLIENT_ACTIVATED: 'client_activated'
+}
+
+// Create a notification
+export async function createNotification(notification) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert({
+      ...notification,
+      read: false,
+      created_at: new Date().toISOString()
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Get unread notifications for a therapist
+export async function getUnreadNotifications(therapistId = DEMO_THERAPIST_ID) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('therapist_id', therapistId)
+    .eq('read', false)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching notifications:', error)
+    return []
+  }
+  return data || []
+}
+
+// Get all notifications for a therapist (with limit)
+export async function getNotifications(therapistId = DEMO_THERAPIST_ID, limit = 20) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('therapist_id', therapistId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('Error fetching notifications:', error)
+    return []
+  }
+  return data || []
+}
+
+// Mark a notification as read
+export async function markNotificationRead(notificationId) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('id', notificationId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Mark all notifications for a client as read (used when clearing post-crisis)
+export async function markClientNotificationsRead(clientId, therapistId = DEMO_THERAPIST_ID) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('client_id', clientId)
+    .eq('therapist_id', therapistId)
+    .eq('read', false)
+    .select()
+
+  if (error) throw error
+  return data
+}
+
+// Get unread notification count
+export async function getUnreadNotificationCount(therapistId = DEMO_THERAPIST_ID) {
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('therapist_id', therapistId)
+    .eq('read', false)
+
+  if (error) {
+    console.error('Error counting notifications:', error)
+    return 0
+  }
+  return count || 0
+}
