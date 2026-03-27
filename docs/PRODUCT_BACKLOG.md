@@ -1,6 +1,6 @@
 # CoTherapy Product Backlog
 
-**Last updated:** 2026-03-26
+**Last updated:** 2026-03-27
 **Maintained by:** Adam Blackman (Founder/CEO)
 **PRD Version:** v2.1 (2026-03-25)
 
@@ -32,29 +32,31 @@
 - ✅ Client consent gate and holding state before first session review
 - ✅ Therapist crisis notification system
 
+### Demo Data (Sprint 2 — March 2026)
+- ✅ **P9: Multi-client demo data seed** — 5 synthetic clients with clinician-written content + 2 sandbox clients
+  - Sarah L. (IFS): preference learning demo with 6 sessions, 35 messages, therapist corrections
+  - David R. (CBT): routine workflow demo with high approval rate
+  - Michael T. (Integrative): post-crisis demo with Route E, crisis notification
+  - Emily K. (CBT): inactive/pre-activation demo showing consent gate
+  - James P. (Psychodynamic): sensitivity flag demo with containment
+  - npm scripts: `seed:demo`, `seed:sandbox`, `seed:all`
+
 ---
 
 ## Next Up (Sprint 2 — Pre-Engineer Demo Build)
-
-### Phase 1 — Demo Foundation
-- ⬜ **P9: Multi-client demo data seed**
-  - 3-5 synthetic clients with varied scenarios (active w/ history, post-crisis holding, newly onboarded, paused, crisis escalation history)
-  - Schema-mapped: client profiles, session notes, extracted moments, chat histories, KTMs, safety events
-  - Supabase seed script
-  - **Priority: HIGH — blocks all subsequent views**
 
 ### Phase 2 — Therapist Workflow
 - ⬜ **P6: Review Queue (therapist inbox)**
   - Cross-client dashboard: unreviewed moments, flagged messages, crisis alerts, post-crisis clients
   - Sort/filter by urgency, client, type
   - Click-through to Post-Session and Pre-Session views
-  - *Depends on: P9*
+  - *Ready to build (P9 ✅)*
 
 - ⬜ **P8: Policy Pack edit + restore UI**
   - Convert read-only Config History tab to editable
   - Version history with point-in-time restore
   - Writes to `policy_pack_edits` table (already exists)
-  - *Depends on: P9*
+  - *Ready to build (P9 ✅)*
 
 ### Phase 3 — Intelligence Layer Showcase
 - ⬜ **P7: DSP Evolution Panel ("Your AI has learned...")**
@@ -62,7 +64,7 @@
   - Display active learned preferences with correction examples
   - Reset/rollback capability
   - **Key demo screen: shows preference learning flywheel in action**
-  - *Depends on: P6, P9*
+  - *Depends on: P6* (P9 ✅)
 
 ### Phase 4 — Demo Polish
 - ⬜ **P10: Onboarding flow polish**
