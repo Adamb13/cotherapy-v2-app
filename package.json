@@ -7,9 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "seed:demo": "node scripts/seed-demo.js demo",
-    "seed:sandbox": "node scripts/seed-demo.js sandbox",
-    "seed:all": "node scripts/seed-demo.js all"
+    "seed:demo": "node --env-file=.env scripts/seed-demo.js demo",
+    "seed:sandbox": "node --env-file=.env scripts/seed-demo.js sandbox",
+    "seed:all": "node --env-file=.env scripts/seed-demo.js all"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

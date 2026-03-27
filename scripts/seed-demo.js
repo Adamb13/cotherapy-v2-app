@@ -86,7 +86,8 @@ async function clearDemoData(clientIds) {
   console.log(`Clearing data for ${clientIds.length} clients...`)
 
   // Delete in order to respect foreign key constraints
-  const tables = [
+  // Tables with client_id foreign key
+  const tablesWithClientId = [
     'dsp_feedback',
     'response_reviews',
     'moment_reviews',
@@ -96,11 +97,10 @@ async function clearDemoData(clientIds) {
     'messages',
     'ktms',
     'moments',
-    'sessions',
-    'clients'
+    'sessions'
   ]
 
-  for (const table of tables) {
+  for (const table of tablesWithClientId) {
     const { error } = await supabase
       .from(table)
       .delete()
@@ -109,6 +109,16 @@ async function clearDemoData(clientIds) {
     if (error && !error.message.includes('0 rows')) {
       console.warn(`  Warning clearing ${table}:`, error.message)
     }
+  }
+
+  // Delete clients by id (not client_id)
+  const { error: clientError } = await supabase
+    .from('clients')
+    .delete()
+    .in('id', clientIds)
+
+  if (clientError && !clientError.message.includes('0 rows')) {
+    console.warn(`  Warning clearing clients:`, clientError.message)
   }
 
   console.log('  Cleared existing seed data')
