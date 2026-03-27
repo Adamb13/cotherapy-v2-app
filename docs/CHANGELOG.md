@@ -5,8 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- Placeholder stub docs for architecture, safety-routing, prompting, supabase-patterns, deployment
+
 ### Changed
 - Expanded release notes workflow with git tagging instructions and version numbering rules
+- Fixed file paths in CLAUDE.md (components → pages)
+- Moved personal config to CLAUDE.local.md (local only, not tracked in git)
 
 ---
 

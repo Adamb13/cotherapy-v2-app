@@ -8,5 +8,6 @@ dist
 claude-code-tips/
 
 # Personal Claude Code preferences (not shared with team)
+CLAUDE.local.md
 .claude/output-styles/founder-clinician.md
 .claude/commands/evaluate-tips.md

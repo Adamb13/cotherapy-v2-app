@@ -1,19 +1,11 @@
 # CoTherapy.ai — Claude Code Context
 
 ## What This Is
+
 Therapist-supervised AI for intersession client support. React 18 + Vite 6 + Supabase + Vercel + Claude API.
 
-## How to Work With Me (The Founder)
-I am a psychiatrist, not an engineer. Before making any code change:
-1. Explain WHAT you're about to do in plain language (not code)
-2. Explain WHY — what problem does this solve and how does it fit the architecture
-3. If it touches the database, explain the schema change and why it matters
-4. After making the change, explain what happened and how to verify it works
-5. If you're making a choice between approaches, explain the tradeoffs so I learn
-
-Never assume I understand technical jargon. Use analogies when helpful.
-
 ## Documentation Standards
+
 Write excellent documentation with every change:
 - Add clear comments in code explaining WHY, not just what
 - Every new function gets a comment block: what it does, what it takes, what it returns
@@ -22,6 +14,7 @@ Write excellent documentation with every change:
 - Commit messages must be descriptive: "feat: add moment_reviews table with reason code dropdowns for therapist corrections" not "add table"
 
 ## Safety Rules (Never Violate)
+
 - Route E crisis response MUST include 988 hotline number
 - Hardcoded fallback crisis response must exist independent of AI
 - Post-crisis mode blocks ALL chat until therapist reviews
@@ -30,6 +23,7 @@ Write excellent documentation with every change:
 - Never modify safety patterns in ai.js without explicit approval
 
 ## Regulatory Language (Never Violate)
+
 - AI is a "coaching companion" — NEVER "therapist" or "counselor"
 - Interactions are "coaching" or "reinforcement" — NEVER "therapy" or "treatment"
 - AI "reinforces session themes" — NEVER "provides treatment"
@@ -37,18 +31,21 @@ Write excellent documentation with every change:
 - See /docs/context/regulatory.md for full CURES framework and prohibited language
 
 ## Data Asset Rule
+
 Every therapist action (approve, edit, reject, override) MUST write a structured record with a reason code to the appropriate review table. This is core data flow, not optional logging.
 
 ## Key Files
-- ai.js — Safety routing + Claude API + system prompt assembly
-- db.js — All Supabase queries, Policy Pack, dyad state machine
-- ClientChat.jsx — Client chat with dyad state checks
-- PostSession.jsx — Session notes → moments → KTMs → review
-- PreSession.jsx — Chat review, feedback, DSP feedback, config history
-- TherapistSettings.jsx — Therapist onboarding wizard
-- ClientOnboarding.jsx — Client management + activation
+
+- src/lib/ai.js — Safety routing + Claude API + system prompt assembly
+- src/lib/db.js — All Supabase queries, Policy Pack, dyad state machine
+- src/pages/ClientChat.jsx — Client chat with dyad state checks
+- src/pages/PostSession.jsx — Session notes → moments → KTMs → review
+- src/pages/PreSession.jsx — Chat review, feedback, DSP feedback, config history
+- src/pages/TherapistSettings.jsx — Therapist onboarding wizard
+- src/pages/ClientOnboarding.jsx — Client management + activation
 
 ## Deeper Documentation (Read Before Modifying These Areas)
+
 Context (rules and constraints):
 - /docs/context/regulatory.md — CURES framework, FDA positioning, language rules
 - /docs/context/architecture.md — Data architecture, memory tiers, preference learning schema
@@ -60,6 +57,7 @@ Skills (how we do things here):
 - /docs/skills/deployment.md — Vercel, GitHub, Supabase SQL-first workflow
 
 ## Coding Standards
+
 - Plain JavaScript (no TypeScript)
 - Supabase client for all DB operations
 - API keys server-side only (Vercel env vars)
