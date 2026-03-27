@@ -68,4 +68,15 @@ Skills (how we do things here):
 - Database changes in Supabase SQL Editor BEFORE code changes
 
 ## Release Notes
-After every feature or significant change, add an entry to `/docs/CHANGELOG.md` under `[Unreleased]`. Group entries as Added/Changed/Fixed. When asked to cut a release, move Unreleased items into a new versioned entry.
+
+After every feature or significant change, add an entry to /docs/CHANGELOG.md under [Unreleased]. Group entries as Added/Changed/Fixed. This is automatic — do it on every commit, no need to ask.
+
+When I say "cut a release":
+1. Move all [Unreleased] items into a new versioned entry with today's date
+2. Git tag the release: git tag -a v0.X.0 -m "[summary]"
+3. Push tag: git push origin v0.X.0
+4. Confirm what was tagged and the rollback command if needed
+
+Version numbering: increment minor version (0.2.0 → 0.3.0) for each weekly release. Use patch (0.3.1) for mid-week hotfixes.
+
+Do NOT auto-tag or auto-version without explicit instruction.

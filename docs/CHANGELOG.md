@@ -5,6 +5,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- Expanded release notes workflow with git tagging instructions and version numbering rules
+
 ---
 
 ## [0.2.1] - 2026-03-26
