@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Multi-client demo data seed (P9)**: 5 synthetic clients with clinician-written content:
+  - Sarah L. (IFS) — preference learning demo with 6 sessions, 35 chat messages, therapist corrections, learned DSP
+  - David R. (CBT) — routine workflow demo with high approval rate
+  - Michael T. (Integrative) — post-crisis demo with Route E escalation, crisis notification, safety override
+  - Emily K. (CBT) — inactive/pre-activation demo showing consent gate
+  - James P. (Psychodynamic) — sensitivity flag demo with containment-aware responses
+- 2 sandbox clients for development testing:
+  - Sandbox — Sara M. (minimal data for quick feature testing)
+  - Sandbox — Alex T. (completely empty for onboarding tests)
+- npm scripts: `seed:demo`, `seed:sandbox`, `seed:all`
 - Placeholder stub docs for architecture, safety-routing, prompting, supabase-patterns, deployment
 
 ### Changed
