@@ -66,3 +66,6 @@ Skills (how we do things here):
 - Commits: feat:/fix:/refactor: prefix
 - Each feature = one commit
 - Database changes in Supabase SQL Editor BEFORE code changes
+
+## Release Notes
+After every feature or significant change, add an entry to `/docs/CHANGELOG.md` under `[Unreleased]`. Group entries as Added/Changed/Fixed. When asked to cut a release, move Unreleased items into a new versioned entry.

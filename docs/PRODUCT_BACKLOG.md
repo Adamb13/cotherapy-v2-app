@@ -142,6 +142,12 @@ Per regulatory alignment, use these terms consistently:
 
 ---
 
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for detailed release notes.
+
+---
+
 ## Notes
 
 1. **Prototype vs. Production:** This backlog reflects founder-built prototype work. Items in Icebox require proper engineering discipline (testing, security, scalability).
