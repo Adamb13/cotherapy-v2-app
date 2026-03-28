@@ -55,7 +55,7 @@ const TIER_OPTIONS = [
   { value: 'TIER_3', label: 'TIER_3 — Crisis (988 + therapist alert)' }
 ]
 
-export default function PreSession({ therapist, client, onClientUpdate }) {
+export default function PreSession({ therapist, client, onClientUpdate, onBack }) {
   const [tab, setTab] = useState('summary')
   const [messages, setMessages] = useState([])
   const [flaggedMessages, setFlaggedMessages] = useState([])
@@ -340,14 +340,19 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
     }
   }
 
-  // Stats
+  // Stats - clinically meaningful metrics
+  // Sessions = distinct days with chat activity (proxy for chat sessions)
+  // Flagged = Route B/C/D messages (TIER_2) needing therapist review
+  // Safety events = Route E messages (TIER_3) - crisis events
+  const uniqueChatDays = new Set(
+    messages.map(m => new Date(m.created_at).toDateString())
+  ).size
+
   const stats = {
     messageCount: messages.length,
-    avgLength: messages.length > 0 
-      ? Math.round(messages.filter(m => m.role === 'user').reduce((sum, m) => sum + m.content.split(' ').length, 0) / Math.max(1, messages.filter(m => m.role === 'user').length))
-      : 0,
-    tier2Count: messages.filter(m => m.tier === 'TIER_2').length,
-    tier3Count: messages.filter(m => m.tier === 'TIER_3').length
+    chatSessions: uniqueChatDays,
+    flaggedCount: messages.filter(m => m.tier === 'TIER_2' || ['B', 'C', 'D'].includes(m.safety_route)).length,
+    safetyEvents: messages.filter(m => m.tier === 'TIER_3' || m.safety_route === 'E').length
   }
 
   // Themes (simple extraction from messages)
@@ -377,6 +382,37 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
 
   return (
     <div className="container wide">
+      {/* Breadcrumb navigation - back goes to Client Overview, not dashboard */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 20,
+        fontSize: 15
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: 'var(--sage-dark)',
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+        >
+          <span style={{ fontSize: 18 }}>←</span>
+          {client?.display_name || 'Client'}
+        </button>
+        <span style={{ color: 'var(--warm-gray)' }}>/</span>
+        <span style={{ color: 'var(--warm-gray)' }}>
+          Chat Review
+        </span>
+      </div>
+
       {/* Post-Crisis Alert */}
       {client?.dsp_adjustments?.is_post_crisis && (
         <div className="card" style={{
@@ -410,9 +446,9 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
 
       <div className="flex justify-between items-center mb-32">
         <div>
-          <h2>Pre-Session Review</h2>
+          <h2>Chat Review</h2>
           <div style={{ color: 'var(--warm-gray)', fontSize: 14 }}>
-            <strong>{client?.display_name}</strong> · Last 7 days
+            Review intersession conversations and provide feedback · <strong>{client?.display_name}</strong>
           </div>
         </div>
         <div className="flex items-center gap-16">
@@ -559,19 +595,19 @@ export default function PreSession({ therapist, client, onClientUpdate }) {
               <div className="stat-label">Messages</div>
             </div>
             <div className="card stat-card">
-              <div className="stat-icon">📝</div>
-              <div className="stat-value">{stats.avgLength} words</div>
-              <div className="stat-label">Avg Length</div>
+              <div className="stat-icon">📅</div>
+              <div className="stat-value">{stats.chatSessions}</div>
+              <div className="stat-label">Chat Sessions</div>
             </div>
             <div className="card stat-card">
-              <div className="stat-icon">⚡</div>
-              <div className="stat-value">{stats.tier2Count}</div>
-              <div className="stat-label">Tier-2 Events</div>
+              <div className="stat-icon" style={{ color: stats.flaggedCount > 0 ? '#F57C00' : undefined }}>⚡</div>
+              <div className="stat-value" style={{ color: stats.flaggedCount > 0 ? '#F57C00' : undefined }}>{stats.flaggedCount}</div>
+              <div className="stat-label">Flagged</div>
             </div>
             <div className="card stat-card">
-              <div className="stat-icon">🚨</div>
-              <div className="stat-value">{stats.tier3Count}</div>
-              <div className="stat-label">Tier-3 Events</div>
+              <div className="stat-icon" style={{ color: stats.safetyEvents > 0 ? '#C62828' : undefined }}>🚨</div>
+              <div className="stat-value" style={{ color: stats.safetyEvents > 0 ? '#C62828' : undefined }}>{stats.safetyEvents}</div>
+              <div className="stat-label">Safety Events</div>
             </div>
           </div>
           

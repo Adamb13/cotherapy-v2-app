@@ -159,14 +159,40 @@ main {
   padding-top: 64px;
 }
 
+/* Page layout - full width with responsive padding */
+.page {
+  padding: 32px 40px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+@media (min-width: 1024px) {
+  .page {
+    padding: 40px 60px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .page {
+    padding: 40px 80px;
+  }
+}
+
+/* Container - centered content with max width */
 .container {
   max-width: 640px;
   margin: 0 auto;
-  padding: 40px 24px;
+  padding: 32px 40px;
+}
+
+@media (min-width: 1024px) {
+  .container {
+    padding: 40px 60px;
+  }
 }
 
 .container.wide {
-  max-width: 900px;
+  max-width: 960px;
 }
 
 /* Typography */
@@ -904,4 +930,116 @@ h2 {
   justify-content: center;
   padding: 48px;
   color: var(--warm-gray);
+}
+
+/* ============================================
+   CRISIS ALERT INDICATOR
+   Pulsing red dot for active Route E events
+   Design spec: 8px dot, 14px pulse ring, 2s animation
+   ============================================ */
+
+.crisis-alert-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 6px;
+}
+
+/* Pulsing dot container - holds the dot and the expanding ring */
+.crisis-dot-container {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The solid red dot - 8px, #E24B4A */
+.crisis-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #E24B4A;
+  position: relative;
+  z-index: 2;
+}
+
+/* The pulsing ring - 14px, scales 1→1.5 with opacity fade, 2s loop */
+.crisis-pulse-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(226, 75, 74, 0.3);
+  animation: crisis-pulse 2s ease-out infinite;
+  z-index: 1;
+}
+
+@keyframes crisis-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Crisis alert text - #A32D2D, 12px, weight 500 */
+.crisis-alert-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #A32D2D;
+  white-space: nowrap;
+}
+
+/* ============================================
+   CRISIS REVIEW SCREEN STYLES
+   ============================================ */
+
+/* Message highlighting by safety route */
+.crisis-message-route-a {
+  border-left: 3px solid var(--sage);
+}
+
+.crisis-message-route-b,
+.crisis-message-route-c,
+.crisis-message-route-d {
+  border-left: 3px solid #F57C00;
+  background: #FFF8E1;
+}
+
+.crisis-message-route-e {
+  border-left: 3px solid #C62828;
+  background: #FFEBEE;
+}
+
+/* Crisis trigger highlight */
+.crisis-trigger-message {
+  border: 2px solid #C62828;
+  border-radius: 12px;
+  background: #FFEBEE;
+  position: relative;
+}
+
+.crisis-trigger-message::before {
+  content: '⚠️ Crisis Trigger';
+  position: absolute;
+  top: -10px;
+  left: 12px;
+  background: #C62828;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
 }

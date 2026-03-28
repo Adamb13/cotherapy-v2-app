@@ -126,12 +126,30 @@ export async function getLatestSession(clientId = DEMO_CLIENT_ID) {
     .order('session_date', { ascending: false })
     .limit(1)
     .single()
-  
+
   if (error) {
     console.error('Error fetching session:', error)
     return null
   }
   return data
+}
+
+/**
+ * Get all sessions for a client, ordered by date descending.
+ * Used for Session History display in the PostSession page.
+ */
+export async function getSessionsForClient(clientId) {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('id, session_date, raw_notes, duration_minutes')
+    .eq('client_id', clientId)
+    .order('session_date', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching sessions:', error)
+    return []
+  }
+  return data || []
 }
 
 export async function createSession(session) {
@@ -225,12 +243,55 @@ export async function getKTMsForClient(clientId = DEMO_CLIENT_ID) {
     .eq('is_active', true)
     .eq('status', 'approved')
     .order('therapist_emphasis', { ascending: false })
-  
+
   if (error) {
     console.error('Error fetching KTMs:', error)
     return []
   }
-  return data || []
+
+  const ktms = data || []
+
+  // Return sample KTMs when database is empty for ANY client
+  // This makes the Chat Review Summary tab look meaningful
+  if (ktms.length === 0) {
+    return [
+      {
+        id: 'demo-ktm-1',
+        client_id: DEMO_CLIENT_ID,
+        title: 'Perfectionist Manager Part',
+        content: 'Remember that your perfectionist manager part has good intentions - it\'s trying to protect you. You can acknowledge its efforts while also giving yourself permission to be good enough.',
+        ai_emphasis: 5,
+        therapist_emphasis: 5,
+        status: 'approved',
+        is_active: true,
+        times_used: 3
+      },
+      {
+        id: 'demo-ktm-2',
+        client_id: DEMO_CLIENT_ID,
+        title: 'Imposter Feelings',
+        content: 'The imposter feelings are not facts - they\'re old protective patterns. When they show up, try naming them: "I notice I\'m having imposter thoughts right now."',
+        ai_emphasis: 4,
+        therapist_emphasis: 4,
+        status: 'approved',
+        is_active: true,
+        times_used: 2
+      },
+      {
+        id: 'demo-ktm-3',
+        client_id: DEMO_CLIENT_ID,
+        title: 'Work-Life Boundary',
+        content: 'You\'ve identified that staying late is often the perfectionist part taking over. Practice the micro-pause: before deciding to stay late, ask yourself "Is this truly necessary, or is this my manager part?"',
+        ai_emphasis: 3,
+        therapist_emphasis: 4,
+        status: 'approved',
+        is_active: true,
+        times_used: 1
+      }
+    ]
+  }
+
+  return ktms
 }
 
 export async function getKTMsForSession(sessionId) {
@@ -316,12 +377,73 @@ export async function getRecentMessagesForReview(clientId = DEMO_CLIENT_ID) {
     .eq('client_id', clientId)
     .order('created_at', { ascending: false })
     .limit(20)
-  
+
   if (error) {
     console.error('Error fetching messages:', error)
     return []
   }
-  return (data || []).reverse()
+
+  const messages = (data || []).reverse()
+
+  // Return sample messages when database is empty for ANY client
+  // This makes the Chat Review demo look meaningful
+  // These messages align with getClientDashboardStats demo data
+  if (messages.length === 0) {
+    const now = Date.now()
+    return [
+      {
+        id: 'demo-msg-1',
+        client_id: DEMO_CLIENT_ID,
+        role: 'user',
+        content: "I've been thinking about what we discussed in our last session. The parts work really resonated with me, especially identifying my perfectionist manager part.",
+        created_at: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        tier: 'TIER_1'
+      },
+      {
+        id: 'demo-msg-2',
+        client_id: DEMO_CLIENT_ID,
+        role: 'assistant',
+        content: "It's wonderful that the parts work is resonating with you. Recognizing that perfectionist manager part is a significant step. How has that awareness been showing up for you between sessions?",
+        created_at: new Date(now - 2 * 24 * 60 * 60 * 1000 + 30000).toISOString(),
+        tier: 'TIER_1'
+      },
+      {
+        id: 'demo-msg-3',
+        client_id: DEMO_CLIENT_ID,
+        role: 'user',
+        content: "I noticed it come up at work yesterday. I caught myself staying late to re-check everything even though it was already good enough. Dr. Chen would probably call that the manager trying to protect me.",
+        created_at: new Date(now - 1.5 * 24 * 60 * 60 * 1000).toISOString(),
+        tier: 'TIER_1'
+      },
+      {
+        id: 'demo-msg-4',
+        client_id: DEMO_CLIENT_ID,
+        role: 'assistant',
+        content: "That's a really valuable observation. Catching the pattern in the moment is exactly the kind of awareness you've been building. What do you think that manager part was trying to protect you from?",
+        created_at: new Date(now - 1.5 * 24 * 60 * 60 * 1000 + 30000).toISOString(),
+        tier: 'TIER_1'
+      },
+      {
+        id: 'demo-msg-5',
+        client_id: DEMO_CLIENT_ID,
+        role: 'user',
+        content: "I think it's still connected to that fear of being seen as incompetent. Like if I make a mistake, everyone will finally see I don't belong here.",
+        created_at: new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        tier: 'TIER_2'
+      },
+      {
+        id: 'demo-msg-6',
+        client_id: DEMO_CLIENT_ID,
+        role: 'assistant',
+        content: "That imposter feeling is such a common experience, and it sounds like your perfectionist part has taken on the job of making sure that fear never comes true. That's actually a protective intention, even if the strategy is exhausting. Would it feel okay to explore what that part might need to feel less vigilant?",
+        created_at: new Date(now - 1 * 24 * 60 * 60 * 1000 + 30000).toISOString(),
+        tier: 'TIER_2',
+        flagged_for_review: true
+      }
+    ]
+  }
+
+  return messages
 }
 
 export async function getFlaggedMessages(clientId = DEMO_CLIENT_ID) {
@@ -705,8 +827,85 @@ export async function createPolicyPackSnapshot(clientId, therapist, type = POLIC
 }
 
 // Get policy pack history for a client
+// Returns demo data for demo client when no real data exists
 export function getPolicyPackHistory(client) {
-  return client?.dsp_adjustments?.policy_packs || []
+  const packs = client?.dsp_adjustments?.policy_packs || []
+
+  // Return sample policy packs when database is empty for ANY client
+  // This makes the Config History tab look meaningful in demo mode
+  if (packs.length === 0) {
+    const now = Date.now()
+    return [
+      {
+        version: now - 7 * 24 * 60 * 60 * 1000,
+        created_at: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        type: POLICY_PACK_TYPES.CLIENT_ACTIVATION,
+        notes: 'Initial client activation - beginning of care',
+        therapist_config: {
+          modality: 'IFS',
+          approach_description: 'Internal Family Systems approach with emphasis on parts work',
+          dsp_directiveness: 3,
+          dsp_warmth: 4,
+          dsp_structure: 3
+        },
+        client_config: {
+          display_name: client?.display_name || 'Demo Client',
+          is_active: true,
+          dyad_status: 'active',
+          dsp_adjustments: {
+            max_turns_per_day: 20
+          }
+        }
+      },
+      {
+        version: now - 4 * 24 * 60 * 60 * 1000,
+        created_at: new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(),
+        type: POLICY_PACK_TYPES.SESSION_START,
+        notes: 'Post-session review completed. Integration: Reflective. 3 moments approved.',
+        therapist_config: {
+          modality: 'IFS',
+          dsp_directiveness: 3,
+          dsp_warmth: 4,
+          dsp_structure: 3
+        },
+        client_config: {
+          display_name: client?.display_name || 'Demo Client',
+          is_active: true,
+          dyad_status: 'active',
+          dsp_adjustments: {
+            max_turns_per_day: 20,
+            avoid_topics: ['divorce proceedings'],
+            contraindications: 'History of dissociation - avoid deep exploration without grounding first'
+          }
+        }
+      },
+      {
+        version: now - 1 * 24 * 60 * 60 * 1000,
+        created_at: new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        type: POLICY_PACK_TYPES.CONFIG_CHANGE,
+        notes: 'Updated daily message limit based on client engagement patterns',
+        therapist_config: {
+          modality: 'IFS',
+          dsp_directiveness: 3,
+          dsp_warmth: 4,
+          dsp_structure: 3
+        },
+        client_config: {
+          display_name: client?.display_name || 'Demo Client',
+          is_active: true,
+          dyad_status: 'active',
+          dsp_adjustments: {
+            max_turns_per_day: 30,
+            avoid_topics: ['divorce proceedings', 'sister relationship'],
+            contraindications: 'History of dissociation - avoid deep exploration without grounding first',
+            modality_override: null
+          }
+        }
+      }
+    ]
+  }
+
+  return packs
 }
 
 // Get current policy version
@@ -1010,4 +1209,219 @@ export async function getUnreadNotificationCount(therapistId = DEMO_THERAPIST_ID
     return 0
   }
   return count || 0
+}
+
+// ============================================================
+// DASHBOARD: Aggregate queries for Review Queue (P6)
+// ============================================================
+
+/**
+ * Get crisis alert count for a client (unread crisis notifications)
+ */
+export async function getCrisisAlertCount(clientId) {
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('type', 'crisis_detected')
+    .eq('read', false)
+
+  if (error) {
+    console.error('Error counting crisis alerts:', error)
+    return 0
+  }
+  return count || 0
+}
+
+/**
+ * Get last session date for a client
+ */
+export async function getLastSessionDate(clientId) {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('session_date')
+    .eq('client_id', clientId)
+    .order('session_date', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error) return null
+  return data?.session_date || null
+}
+
+/**
+ * Get last client chat message date
+ */
+export async function getLastChatDate(clientId) {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('created_at')
+    .eq('client_id', clientId)
+    .eq('role', 'user')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error) return null
+  return data?.created_at || null
+}
+
+/**
+ * Get session count for a client
+ */
+export async function getSessionCount(clientId) {
+  const { count, error } = await supabase
+    .from('sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+
+  if (error) return 0
+  return count || 0
+}
+
+/**
+ * Get pending (unreviewed) moments count for a client
+ */
+export async function getPendingMomentsCount(clientId) {
+  const { count, error } = await supabase
+    .from('moments')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('status', 'pending')
+
+  if (error) return 0
+  return count || 0
+}
+
+/**
+ * Get flagged messages count for a client
+ */
+export async function getFlaggedMessagesCount(clientId) {
+  const { count, error } = await supabase
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('flagged_for_review', true)
+
+  if (error) return 0
+  return count || 0
+}
+
+/**
+ * Get count of client messages in the last 7 days
+ * Shows recent engagement/activity level for the dashboard
+ */
+export async function getRecentActivityCount(clientId) {
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+  const { count, error } = await supabase
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('role', 'user') // Only count client messages, not AI responses
+    .gte('created_at', sevenDaysAgo.toISOString())
+
+  if (error) return 0
+  return count || 0
+}
+
+/**
+ * Get all dashboard stats for a single client
+ * Returns: { alerts, lastSession, lastChat, sessions, pendingMoments, flaggedMessages, recentActivity }
+ *
+ * For demo purposes: When stats are empty, returns sample data so the UI
+ * looks meaningful during development/demos. This aligns with the demo
+ * messages shown in Chat Review (getRecentMessagesForReview).
+ */
+export async function getClientDashboardStats(clientId) {
+  const [alerts, lastSession, lastChat, sessions, pendingMoments, flaggedMessages, recentActivity] = await Promise.all([
+    getCrisisAlertCount(clientId),
+    getLastSessionDate(clientId),
+    getLastChatDate(clientId),
+    getSessionCount(clientId),
+    getPendingMomentsCount(clientId),
+    getFlaggedMessagesCount(clientId),
+    getRecentActivityCount(clientId)
+  ])
+
+  // Check if all stats are empty/zero (indicates no data seeded)
+  const hasNoData = !lastSession && !lastChat && sessions === 0 && recentActivity === 0
+
+  // Return sample data when database is empty for ANY client
+  // This makes the demo look meaningful without requiring seeded data
+  // Stats are aligned with demo messages in getRecentMessagesForReview:
+  // - 6 total messages (3 user, 3 assistant) over 2 days
+  // - Last message was 1 day ago
+  // - 3 user messages in last 7 days = recentActivity
+  if (hasNoData) {
+    const now = new Date()
+    const threeDaysAgo = new Date(now)
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+    const oneDayAgo = new Date(now)
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1)
+
+    return {
+      alerts: 0,
+      lastSession: threeDaysAgo.toISOString(),
+      lastChat: oneDayAgo.toISOString(),  // Aligned with demo messages (last msg was 1 day ago)
+      sessions: 4,
+      pendingMoments: 0,
+      flaggedMessages: 1,  // Aligned with demo messages (1 flagged)
+      recentActivity: 3    // Aligned with demo messages (3 user messages in last 7 days)
+    }
+  }
+
+  return { alerts, lastSession, lastChat, sessions, pendingMoments, flaggedMessages, recentActivity }
+}
+
+/**
+ * Get dashboard stats for all clients (batch)
+ * Returns: Map of clientId -> stats
+ */
+export async function getAllClientsDashboardStats(clientIds) {
+  const statsMap = {}
+
+  // Fetch in parallel for all clients
+  const promises = clientIds.map(async (clientId) => {
+    const stats = await getClientDashboardStats(clientId)
+    statsMap[clientId] = stats
+  })
+
+  await Promise.all(promises)
+  return statsMap
+}
+
+/**
+ * Clear crisis alert for a client (mark notification as read and clear post-crisis mode)
+ */
+export async function clearCrisisAlert(clientId, therapistId = DEMO_THERAPIST_ID) {
+  // Mark crisis notifications as read
+  await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('client_id', clientId)
+    .eq('therapist_id', therapistId)
+    .eq('type', 'crisis_detected')
+    .eq('read', false)
+
+  // Clear post-crisis mode on client
+  await clearPostCrisisMode(clientId)
+}
+
+/**
+ * Check if a client has an active crisis (post-crisis mode active)
+ * Crisis = Route E triggered and not yet cleared by therapist
+ */
+export function hasActiveCrisis(client) {
+  return client?.dsp_adjustments?.is_post_crisis === true
+}
+
+/**
+ * Get list of clients with active crises from a client list
+ * Returns array of clients where is_post_crisis is true
+ * Used by nav bar to show crisis indicator
+ */
+export function getClientsWithCrisis(clients) {
+  return clients.filter(client => hasActiveCrisis(client))
 }

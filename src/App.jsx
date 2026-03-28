@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTherapist, getClient, getAllClientsForTherapist, getDyadStatus, DYAD_STATES, getNotifications, markNotificationRead } from './lib/db'
+import { getTherapist, getClient, getAllClientsForTherapist, getDyadStatus, DYAD_STATES, getClientsWithCrisis } from './lib/db'
 import { DEMO_THERAPIST_ID } from './lib/supabase'
 import TherapistSettings from './pages/TherapistSettings'
 import ClientOnboarding from './pages/ClientOnboarding'
@@ -7,6 +7,9 @@ import PostSession from './pages/PostSession'
 import PreSession from './pages/PreSession'
 import ClientChat from './pages/ClientChat'
 import ClientConsent from './pages/ClientConsent'
+import MyPractice from './pages/MyPractice'
+import ClientOverview from './pages/ClientOverview'
+import CrisisReview from './pages/CrisisReview'
 
 const DEMO_PASSWORD = 'c0Therapy2025!'
 
@@ -15,14 +18,13 @@ function App() {
   const [passwordInput, setPasswordInput] = useState('')
   const [passwordError, setPasswordError] = useState(false)
   const [userType, setUserType] = useState('therapist')
-  const [currentView, setCurrentView] = useState('settings')
+  // Views: 'dashboard', 'settings', 'add-client', 'client-overview', 'post-session', 'pre-session', 'client-settings', 'crisis-review'
+  const [currentView, setCurrentView] = useState('dashboard')
   const [therapist, setTherapist] = useState(null)
   const [client, setClient] = useState(null)
   const [clients, setClients] = useState([])
   const [showClientSelector, setShowClientSelector] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [notifications, setNotifications] = useState([])
-  const [showNotifications, setShowNotifications] = useState(false)
 
   useEffect(() => {
     if (sessionStorage.getItem('cotherapy_auth') === 'true') {
@@ -49,17 +51,15 @@ function App() {
 
   async function loadData() {
     try {
-      const [t, c, allClients, notifs] = await Promise.all([
+      const [t, c, allClients] = await Promise.all([
         getTherapist(),
         getClient(),
-        getAllClientsForTherapist(DEMO_THERAPIST_ID),
-        getNotifications(DEMO_THERAPIST_ID)
+        getAllClientsForTherapist(DEMO_THERAPIST_ID)
       ])
       setTherapist(t)
       setClient(c)
       // Show all non-terminated clients (including invited, pending_config, paused)
       setClients(allClients.filter(cl => getDyadStatus(cl) !== DYAD_STATES.TERMINATED))
-      setNotifications(notifs)
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
@@ -67,36 +67,29 @@ function App() {
     }
   }
 
-  // Refresh notifications (called after actions that might generate notifications)
-  async function refreshNotifications() {
-    const notifs = await getNotifications(DEMO_THERAPIST_ID)
-    setNotifications(notifs)
-  }
-
-  // Handle notification click - mark as read and navigate
-  async function handleNotificationClick(notification) {
-    // Mark as read
-    await markNotificationRead(notification.id)
-
-    // Find the client and select them
-    const notifClient = clients.find(c => c.id === notification.client_id)
-    if (notifClient) {
-      setClient(notifClient)
-    }
-
-    // Navigate to pre-session review
-    setCurrentView('pre-session')
-    setShowNotifications(false)
-
-    // Refresh notifications to update unread count
-    refreshNotifications()
-  }
 
   // Reload clients when returning from client onboarding
   async function reloadClients() {
     const allClients = await getAllClientsForTherapist(DEMO_THERAPIST_ID)
     // Show all non-terminated clients (including invited, pending_config, paused)
     setClients(allClients.filter(cl => getDyadStatus(cl) !== DYAD_STATES.TERMINATED))
+  }
+
+  /**
+   * Handle crisis alert click
+   * - If 1 crisis: go directly to that client's crisis review
+   * - If 2+ crises: go to dashboard where all alert rows are highlighted
+   */
+  function handleCrisisAlertClick() {
+    const crisisClients = getClientsWithCrisis(clients)
+    if (crisisClients.length === 1) {
+      // Single crisis: go directly to that client's crisis review
+      setClient(crisisClients[0])
+      setCurrentView('crisis-review')
+    } else {
+      // Multiple crises: go to dashboard
+      setCurrentView('dashboard')
+    }
   }
 
   // Password screen
@@ -174,30 +167,53 @@ function App() {
         <div className="nav-links">
           {userType === 'therapist' ? (
             <>
-              <button
-                className={`nav-link ${currentView === 'settings' ? 'active' : ''}`}
-                onClick={() => setCurrentView('settings')}
-              >
-                <span>⚙</span> My Practice
-              </button>
-              <button
-                className={`nav-link ${currentView === 'client-onboarding' ? 'active' : ''}`}
-                onClick={() => setCurrentView('client-onboarding')}
-              >
-                <span>👤</span> Client Setup
-              </button>
-              <button
-                className={`nav-link ${currentView === 'post-session' ? 'active' : ''}`}
-                onClick={() => setCurrentView('post-session')}
-              >
-                <span>✎</span> Post-Session
-              </button>
-              <button
-                className={`nav-link ${currentView === 'pre-session' ? 'active' : ''}`}
-                onClick={() => setCurrentView('pre-session')}
-              >
-                <span>☰</span> Pre-Session
-              </button>
+              {/* Dashboard mode: no nav button needed (you're already here), just crisis alerts */}
+              {(currentView === 'dashboard' || currentView === 'settings' || currentView === 'add-client') ? (
+                <>
+                  {/* Crisis alert indicator - pulsing dot + text, only shows when active crisis */}
+                  {/* Single crisis: click goes directly to crisis review. Multiple: goes to dashboard */}
+                  {getClientsWithCrisis(clients).length > 0 && (
+                    <button
+                      className="crisis-alert-indicator"
+                      onClick={handleCrisisAlertClick}
+                    >
+                      <div className="crisis-dot-container">
+                        <div className="crisis-dot" />
+                        <div className="crisis-pulse-ring" />
+                      </div>
+                      <span className="crisis-alert-text">
+                        {getClientsWithCrisis(clients).length} crisis alert{getClientsWithCrisis(clients).length !== 1 ? 's' : ''}
+                      </span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                /* Client mode: just "← My Practice" + crisis indicator */
+                /* No tabs — breadcrumb and action cards handle all navigation */
+                <>
+                  <button
+                    className="nav-link"
+                    onClick={() => setCurrentView('dashboard')}
+                  >
+                    <span>←</span> My Practice
+                  </button>
+                  {/* Crisis alert indicator - persistent across all client pages */}
+                  {getClientsWithCrisis(clients).length > 0 && (
+                    <button
+                      className="crisis-alert-indicator"
+                      onClick={handleCrisisAlertClick}
+                    >
+                      <div className="crisis-dot-container">
+                        <div className="crisis-dot" />
+                        <div className="crisis-pulse-ring" />
+                      </div>
+                      <span className="crisis-alert-text">
+                        {getClientsWithCrisis(clients).length} crisis alert{getClientsWithCrisis(clients).length !== 1 ? 's' : ''}
+                      </span>
+                    </button>
+                  )}
+                </>
+              )}
             </>
           ) : (
             <button className="nav-link active">
@@ -207,8 +223,8 @@ function App() {
         </div>
         
         <div className="nav-right">
-          {/* Client Selector (Therapist view only) */}
-          {userType === 'therapist' && clients.length > 0 && (
+          {/* Client Selector (only show when viewing a client, for quick switching) */}
+          {userType === 'therapist' && clients.length > 0 && !['dashboard', 'settings', 'add-client'].includes(currentView) && (
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowClientSelector(!showClientSelector)}
@@ -278,143 +294,10 @@ function App() {
             </div>
           )}
 
-          {/* Notification Bell (Therapist view only) */}
-          {userType === 'therapist' && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 36,
-                  height: 36,
-                  background: showNotifications ? 'var(--sage-light)' : 'transparent',
-                  border: '1px solid var(--sand-dark)',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  position: 'relative'
-                }}
-                title="Notifications"
-              >
-                <span style={{ fontSize: 18 }}>🔔</span>
-                {notifications.filter(n => !n.read).length > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: -4,
-                    right: -4,
-                    background: '#C62828',
-                    color: 'white',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    minWidth: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '0 4px'
-                  }}>
-                    {notifications.filter(n => !n.read).length}
-                  </span>
-                )}
-              </button>
-              {showNotifications && (
-                <>
-                  <div
-                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
-                    onClick={() => setShowNotifications(false)}
-                  />
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: 4,
-                    background: 'white',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-                    border: '1px solid var(--sand-dark)',
-                    width: 320,
-                    maxHeight: 400,
-                    overflow: 'auto',
-                    zIndex: 100
-                  }}>
-                    <div style={{
-                      padding: '12px 16px',
-                      borderBottom: '1px solid var(--sand)',
-                      fontWeight: 600,
-                      fontSize: 14
-                    }}>
-                      Notifications
-                    </div>
-                    {notifications.length === 0 ? (
-                      <div style={{
-                        padding: 24,
-                        textAlign: 'center',
-                        color: 'var(--warm-gray)',
-                        fontSize: 13
-                      }}>
-                        No notifications
-                      </div>
-                    ) : (
-                      notifications.map(n => (
-                        <button
-                          key={n.id}
-                          onClick={() => handleNotificationClick(n)}
-                          style={{
-                            display: 'block',
-                            width: '100%',
-                            padding: '12px 16px',
-                            background: n.read ? 'transparent' : '#FFF8E1',
-                            border: 'none',
-                            borderBottom: '1px solid var(--sand)',
-                            cursor: 'pointer',
-                            textAlign: 'left'
-                          }}
-                        >
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 10
-                          }}>
-                            <span style={{ fontSize: 16 }}>
-                              {n.type === 'crisis_detected' ? '🚨' : n.type === 'review_needed' ? '📋' : '✓'}
-                            </span>
-                            <div style={{ flex: 1 }}>
-                              <div style={{
-                                fontSize: 13,
-                                fontWeight: n.read ? 400 : 600,
-                                color: n.type === 'crisis_detected' ? '#C62828' : 'inherit',
-                                marginBottom: 4
-                              }}>
-                                {n.message}
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--warm-gray)' }}>
-                                {new Date(n.created_at).toLocaleString()}
-                              </div>
-                            </div>
-                            {!n.read && (
-                              <span style={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: 4,
-                                background: '#C62828'
-                              }} />
-                            )}
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           <div className="view-toggle">
             <button
               className={userType === 'therapist' ? 'active' : ''}
-              onClick={() => { setUserType('therapist'); setCurrentView('settings'); refreshNotifications(); }}
+              onClick={() => { setUserType('therapist'); setCurrentView('dashboard'); }}
             >
               Therapist
             </button>
@@ -452,30 +335,63 @@ function App() {
           )
         ) : (
           <>
+            {/* Dashboard view - the practice hub */}
+            {currentView === 'dashboard' && (
+              <MyPractice
+                clients={clients}
+                onSelectClient={(selectedClient) => {
+                  setClient(selectedClient)
+                  setCurrentView('client-overview')
+                }}
+                onAddClient={() => setCurrentView('add-client')}
+                onEditSettings={() => setCurrentView('settings')}
+                onRefresh={reloadClients}
+              />
+            )}
+            {/* Therapist settings - edit your profile */}
             {currentView === 'settings' && (
               <TherapistSettings
                 therapist={therapist}
                 onUpdate={setTherapist}
-                onNext={() => setCurrentView('client-onboarding')}
+                onNext={() => setCurrentView('dashboard')}
               />
             )}
-            {currentView === 'client-onboarding' && (
+            {/* Add new client wizard */}
+            {currentView === 'add-client' && (
               <ClientOnboarding
                 therapist={therapist}
-                client={client}
+                client={null}
                 onClientUpdate={(updatedClient) => {
                   setClient(updatedClient)
                   reloadClients()
                 }}
-                onNext={() => setCurrentView('post-session')}
+                onNext={() => setCurrentView('dashboard')}
+                onBack={() => setCurrentView('dashboard')}
               />
             )}
+            {/* Client Overview - landing page when opening a client */}
+            {currentView === 'client-overview' && (
+              <ClientOverview
+                client={client}
+                therapist={therapist}
+                onNavigate={(view) => setCurrentView(view)}
+                onClientUpdate={(updatedClient) => {
+                  setClient(updatedClient)
+                  reloadClients()
+                }}
+                onBack={() => setCurrentView('dashboard')}
+              />
+            )}
+            {/* Client-specific views */}
             {currentView === 'post-session' && (
               <PostSession
                 therapist={therapist}
                 client={client}
                 onClientUpdate={setClient}
                 onNext={() => setCurrentView('pre-session')}
+                onBack={() => setCurrentView('client-overview')}
+                onViewCrisis={() => setCurrentView('crisis-review')}
+                startFresh={true}
               />
             )}
             {currentView === 'pre-session' && (
@@ -483,6 +399,44 @@ function App() {
                 therapist={therapist}
                 client={client}
                 onClientUpdate={setClient}
+                onBack={() => setCurrentView('client-overview')}
+              />
+            )}
+            {/* Client settings - edit client's boundaries and config */}
+            {currentView === 'client-settings' && (
+              <ClientOnboarding
+                therapist={therapist}
+                client={client}
+                onClientUpdate={(updatedClient) => {
+                  setClient(updatedClient)
+                  reloadClients()
+                }}
+                onNext={() => setCurrentView('client-overview')}
+                onBack={() => setCurrentView('client-overview')}
+                onViewCrisis={() => setCurrentView('crisis-review')}
+                editMode={true}
+              />
+            )}
+            {/* Crisis Review - review and resolve crisis events */}
+            {currentView === 'crisis-review' && (
+              <CrisisReview
+                client={client}
+                therapist={therapist}
+                onClear={() => {
+                  // After clearing crisis, refresh client data and go to overview
+                  reloadClients()
+                  setCurrentView('client-overview')
+                }}
+                onAdjustSettings={() => {
+                  // After clearing crisis, go to settings to adjust
+                  reloadClients()
+                  setCurrentView('client-settings')
+                }}
+                onKeepHold={() => {
+                  // Keep hold, go back to overview
+                  setCurrentView('client-overview')
+                }}
+                onBack={() => setCurrentView('client-overview')}
               />
             )}
           </>

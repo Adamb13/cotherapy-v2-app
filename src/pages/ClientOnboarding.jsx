@@ -16,26 +16,61 @@ import { DEMO_THERAPIST_ID } from '../lib/supabase'
 
 const STEPS = ['Client Info', 'Boundaries', 'AI Settings', 'Activate']
 
-export default function ClientOnboarding({ therapist, client, onClientUpdate, onNext }) {
-  const [view, setView] = useState('list') // 'list' or 'edit'
+/**
+ * ClientOnboarding - Create or edit client configuration
+ *
+ * Props:
+ * - therapist: The therapist object
+ * - client: Client to edit (null for add mode)
+ * - onClientUpdate: Called when client is created/updated
+ * - onNext: Called after successful save
+ * - onBack: Called when user wants to go back (optional)
+ * - editMode: If true, skip list view and go directly to edit for provided client
+ */
+export default function ClientOnboarding({ therapist, client, onClientUpdate, onNext, onBack, onViewCrisis, editMode }) {
+  // If editMode or client is provided, start in edit view; otherwise show list
+  const [view, setView] = useState(editMode || client ? 'edit' : 'list')
   const [clients, setClients] = useState([])
-  const [selectedClient, setSelectedClient] = useState(null)
+  const [selectedClient, setSelectedClient] = useState(editMode && client ? client : null)
   const [loading, setLoading] = useState(true)
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
-  const [config, setConfig] = useState({
-    display_name: '',
-    sensitivity_topics: '',
-    avoid_topics: '',
-    contraindications: '',
-    modality_override: '',
-    max_turns_per_day: 20
+  const [config, setConfig] = useState(() => {
+    // If editMode with client, initialize config from client
+    if (editMode && client) {
+      return {
+        display_name: client.display_name || '',
+        sensitivity_topics: client.dsp_adjustments?.sensitivity_topics?.join(', ') || '',
+        avoid_topics: client.dsp_adjustments?.avoid_topics?.join(', ') || '',
+        contraindications: client.dsp_adjustments?.contraindications || '',
+        modality_override: client.dsp_adjustments?.modality_override || '',
+        max_turns_per_day: client.dsp_adjustments?.max_turns_per_day || 20,
+        // Convert ISO timestamp to datetime-local format (YYYY-MM-DDTHH:MM)
+        next_session_date: client.next_session_date
+          ? new Date(client.next_session_date).toISOString().slice(0, 16)
+          : ''
+      }
+    }
+    // Default empty config for new client
+    return {
+      display_name: '',
+      sensitivity_topics: '',
+      avoid_topics: '',
+      contraindications: '',
+      modality_override: '',
+      max_turns_per_day: 20,
+      next_session_date: ''
+    }
   })
 
-  // Load all clients on mount
+  // Load all clients on mount (only needed for list view)
   useEffect(() => {
-    loadClients()
-  }, [])
+    if (!editMode) {
+      loadClients()
+    } else {
+      setLoading(false)
+    }
+  }, [editMode])
 
   async function loadClients() {
     setLoading(true)
@@ -79,8 +114,12 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
     setView('edit')
   }
 
-  // Back to list
+  // Back to list (or use onBack if provided for external navigation)
   function backToList() {
+    if (onBack) {
+      onBack()
+      return
+    }
     setView('list')
     setSelectedClient(null)
     setStep(0)
@@ -121,7 +160,10 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
       // Update client info
       await updateClient(clientToUpdate.id, {
         display_name: config.display_name,
-        dsp_adjustments: dspAdjustments
+        dsp_adjustments: dspAdjustments,
+        next_session_date: config.next_session_date
+          ? new Date(config.next_session_date).toISOString()
+          : null
       })
 
       // Activate dyad if not already active
@@ -177,7 +219,10 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
 
       const updated = await updateClient(clientToUpdate.id, {
         display_name: config.display_name,
-        dsp_adjustments: dspAdjustments
+        dsp_adjustments: dspAdjustments,
+        next_session_date: config.next_session_date
+          ? new Date(config.next_session_date).toISOString()
+          : null
       })
 
       // Always notify parent to refresh client list (for new clients to appear in selector)
@@ -282,14 +327,94 @@ export default function ClientOnboarding({ therapist, client, onClientUpdate, on
   // =====================
   return (
     <div className="container">
-      {/* Back button */}
-      <button
-        className="btn ghost mb-16"
-        onClick={backToList}
-        style={{ marginLeft: -8 }}
-      >
-        ← Back to Client List
-      </button>
+      {/* Breadcrumb navigation - back goes to Client Overview, not dashboard */}
+      {editMode ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 20,
+          fontSize: 15
+        }}>
+          <button
+            onClick={backToList}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              color: 'var(--sage-dark)',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <span style={{ fontSize: 18 }}>←</span>
+            {selectedClient?.display_name || client?.display_name || 'Client'}
+          </button>
+          <span style={{ color: 'var(--warm-gray)' }}>/</span>
+          <span style={{ color: 'var(--warm-gray)' }}>
+            Settings
+          </span>
+        </div>
+      ) : (
+        <button
+          className="btn ghost mb-16"
+          onClick={backToList}
+          style={{ marginLeft: -8 }}
+        >
+          ← Back to Client List
+        </button>
+      )}
+
+      {/* Crisis Alert Banner - clinical style, not alarming */}
+      {(selectedClient || client)?.dsp_adjustments?.is_post_crisis && onViewCrisis && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '14px 18px',
+          background: 'white',
+          borderLeft: '4px solid #C62828',
+          borderRadius: 6,
+          marginBottom: 24,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+        }}>
+          <span style={{
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            border: '2px solid #C62828',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#C62828',
+            fontSize: 12,
+            fontWeight: 700,
+            flexShrink: 0
+          }}>!</span>
+          <span style={{ color: 'var(--charcoal)', fontSize: 14 }}>
+            Crisis event detected — chat is locked.{' '}
+            <button
+              onClick={onViewCrisis}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: '#C62828',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: 14
+              }}
+            >
+              Review
+            </button>
+            {' '}to resume.
+          </span>
+        </div>
+      )}
 
       {/* Progress Steps */}
       <div className="progress-steps">

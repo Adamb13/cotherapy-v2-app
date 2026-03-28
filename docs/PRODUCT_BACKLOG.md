@@ -46,11 +46,13 @@
 ## Next Up (Sprint 2 — Pre-Engineer Demo Build)
 
 ### Phase 2 — Therapist Workflow
-- ⬜ **P6: Review Queue (therapist inbox)**
-  - Cross-client dashboard: unreviewed moments, flagged messages, crisis alerts, post-crisis clients
-  - Sort/filter by urgency, client, type
-  - Click-through to Post-Session and Pre-Session views
-  - *Ready to build (P9 ✅)*
+- ✅ **P6: Review Queue / My Practice Dashboard**
+  - Cross-client dashboard with client table: Status, Alerts, Pending Review, Last Session, Next Session, Last Chat
+  - Sort by alert status → active → pending → inactive, then alphabetical
+  - Search and status filter chips (All/Active/Pending/Inactive)
+  - Click-through to Client Overview → Session Notes, Chat Review, Client Settings
+  - Crisis alert nav indicator (persistent pulsing dot across all pages)
+  - Crisis review & resolution flow with 3 resolution options + audit logging
 
 - ⬜ **P8: Policy Pack edit + restore UI**
   - Convert read-only Config History tab to editable
@@ -83,7 +85,7 @@
 - 🧊 Multi-user/multi-therapist support
 - 🧊 Real-time subscriptions for crisis alerts
 - 🧊 CI/CD pipeline
-- 🧊 Automated test suite
+- ✅ Automated test suite — Playwright UI tests (24 tests, 7 spec files)
 
 ### PRD v2.1 Features (Not Yet Implemented)
 - 🧊 **TIM (Therapeutic Intensity Model)**: 5-level intervention depth system (Levels 1-5: Reflect & Resource → Deep Engagement). Governs AI's permitted therapeutic ambition per dyad.
@@ -121,7 +123,7 @@ The product separates into two layers:
 | DSP | Dialogue Style Parameters (tone, warmth, directiveness) | ✅ Implemented |
 | KTMs | Key Therapeutic Messages (approved insights/reframes) | ✅ Implemented |
 | Integration Direction | Focus area for intersession (Reflective/Behavioral/Cognitive/Somatic/Stabilization) | ✅ Implemented |
-| TIM | Therapeutic Intensity Model (intervention depth, Levels 1-5) | 🧊 Not yet implemented |
+| TIM | Therapeutic Intensity Model (intervention depth, Levels 1-5) | ✅ UI selector implemented (Session Notes right panel) |
 
 ### Regulatory Positioning (PRD Section 1.3)
 - **Function 1 (CDS-exempt):** Therapist-facing clinical decision support — AI surfaces candidate KTMs for therapist review. Designed to satisfy CURES Act Section 520(o)(1)(E).

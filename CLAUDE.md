@@ -65,6 +65,15 @@ Skills (how we do things here):
 - Each feature = one commit
 - Database changes in Supabase SQL Editor BEFORE code changes
 
+## Testing
+
+- UI tests live in `/tests` and use Playwright (Chromium only)
+- Run `npm run test:ui` after any UI change to verify nothing broke
+- Run `npm run test:ui:headed` to see the browser during tests (useful for debugging)
+- Tests cover: dashboard, client overview, session notes, chat review, client settings, special states, and navigation stability
+- When adding a new page or major UI feature, add a corresponding test file in `/tests`
+- Tests use shared helpers (`tests/helpers.js`) for login and navigation
+
 ## Release Notes
 
 After every feature or significant change, add an entry to /docs/CHANGELOG.md under [Unreleased]. Group entries as Added/Changed/Fixed. This is automatic — do it on every commit, no need to ask.
