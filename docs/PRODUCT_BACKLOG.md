@@ -52,47 +52,45 @@ Status: COMPLETE
 Seed script created and verified. 5 demo clients + 2 sandbox clients with varied scenarios.
 
 #### P6: Review Queue / My Practice dashboard ✅
-Status: COMPLETE (verifying)
+Status: COMPLETE
 Cross-client review queue showing unreviewed moments, chat messages, crisis alerts, post-crisis clients.
 
 #### P12: Client App — Intersession Coaching Experience
 Status: IN PROGRESS
-Standalone client-facing web app. Mobile-first. Separate route/layout from therapist views. Consumes existing /api/chat endpoint and dyad state machine. No real auth (demo mode, matching therapist app).
+Client-facing intersession coaching experience. Audit (2026-03-27) found most state screens already built in ClientChat.jsx — P12 is primarily refactoring into a separate client layout, not building from scratch.
 
 PRD source: Section 3.3 (Client Onboarding Sequence), Onboarding Workflow Spec v4
 
-Sub-items (build in order):
+Sub-items:
 
-**P12a: Client app shell + state-driven views**
-Separate route with client layout (no therapist nav). Dyad state drives what the client sees:
-- invited/consent_pending: not reachable (no account yet)
-- account_created: welcome screen, "your therapist is setting things up"
-- configured/inactive: waiting screen, "your therapist will open coaching when ready"
-- active: chat interface (P12c)
-- post_crisis: hold screen, "your therapist has been notified," grounding resources
-- deactivated: paused screen with crisis resources
-Brand palette, no therapist chrome. Crisis resources visible on every non-chat state.
+**P12b: Client consent + onboarding flow ✅**
+Status: COMPLETE
+ClientConsent.jsx already fully functional: 5-section consent flow with regulatory-compliant language, accept/decline actions, INVITED → PENDING_CONFIG state transition. No further work needed for demo.
 
-**P12b: Client consent + onboarding flow**
-Consent/TOS screen (maps to Onboarding Spec Step 3). Explains: what CoTherapy is, what the AI does and does not do, what the therapist sees, data storage, right to withdraw. Accept creates account, decline notifies therapist. Welcome screen post-consent with crisis resources. No chat access yet.
-For demo: stub the invite link, simulate the consent gate toggle.
+**P12a: Client app shell + state-driven views (refactor)**
+Status: NEXT UP
+All dyad state screens already exist in ClientChat.jsx (post_crisis, PAUSED, TERMINATED, PENDING_CONFIG, awaiting-first-review, ACTIVE chat). Absorbs P12d — deactivation/reactivation screens already render, just need grounding resources added.
 
-**P12c: Intersession coaching chat UX**
-Chat interface consuming /api/chat. Session boundary enforcement:
-- Turn counter (shows remaining turns, configurable per Policy Pack usage_constraints)
+Remaining work:
+- Separate route with client layout (no therapist nav chrome)
+- Mobile-first responsive design
+- Extract CrisisResources into shared component (currently copy-pasted 3× in ClientChat.jsx + 1× in ClientConsent.jsx)
+- Brand palette for client views
+- Crisis resources visible on every non-chat state screen
+- Grounding resources on post_crisis and deactivated screens
+
+**P12c: Intersession coaching chat UX (incremental)**
+Status: PLANNED
+Turn counter already exists in ClientChat.jsx. Remaining work:
 - Session timer (countdown, configurable per Policy Pack usage_constraints)
 - Sessions-per-week tracking
 - Session end state: summary of conversation, next session date (if set), crisis resources
 - Limit-hit states: "You've used your sessions for this week" / "Session complete"
-- Post-crisis mode: chat locked, supportive/grounding message, therapist notified
-Safety routing already functional in API. Client UX just needs to render the states.
+- Post-crisis mode already functional (chat locked, supportive message, therapist notified)
 
 **P12d: Client deactivation + edge state screens**
-What the client sees when:
-- Therapist deactivates coaching (message + crisis resources)
-- Therapist reactivates (welcome back, context preserved)
-- Usage constraints change mid-period
-These are static screens driven by dyad state + Policy Pack fields. Small scope but required for end-to-end demo.
+Status: ABSORBED INTO P12a
+All edge state screens already render in ClientChat.jsx (PAUSED → "Coaching is currently paused", TERMINATED → "Coaching is no longer active"). Grounding resources will be added as part of P12a refactor.
 
 #### P8: Policy Pack edit + restore UI
 Status: PROMPT WRITTEN, READY TO BUILD
@@ -126,6 +124,9 @@ Clinical language pass on TAM questionnaire, modality explanations, UX improveme
 - 🧊 **Informed Consent Versioning**: Versioned consent records linked to TOS version, re-consent flagging on TOS changes
 - 🧊 **Toggle Overrides for TIM**: Enable/disable specific capabilities within TIM levels
 - 🧊 **Usage Constraints**: Sessions per period, turns per session, session duration limits
+
+### Data Model Alignment
+- 🧊 **Dyad state naming alignment**: PRD uses account_created / configured / inactive; code uses INVITED / PENDING_CONFIG / ACTIVE / PAUSED / TERMINATED. Reconcile naming before engineer handoff.
 
 ---
 
