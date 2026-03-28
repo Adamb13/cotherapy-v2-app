@@ -43,36 +43,68 @@
 
 ---
 
-## Next Up (Sprint 2 — Pre-Engineer Demo Build)
+## Sprint 2 — Pre-Engineer Demo Build
 
-### Phase 2 — Therapist Workflow
-- ✅ **P6: Review Queue / My Practice Dashboard**
-  - Cross-client dashboard with client table: Status, Alerts, Pending Review, Last Session, Next Session, Last Chat
-  - Sort by alert status → active → pending → inactive, then alphabetical
-  - Search and status filter chips (All/Active/Pending/Inactive)
-  - Click-through to Client Overview → Session Notes, Chat Review, Client Settings
-  - Crisis alert nav indicator (persistent pulsing dot across all pages)
-  - Crisis review & resolution flow with 3 resolution options + audit logging
+### Priority Order
 
-- ⬜ **P8: Policy Pack edit + restore UI**
-  - Convert read-only Config History tab to editable
-  - Version history with point-in-time restore
-  - Writes to `policy_pack_edits` table (already exists)
-  - *Ready to build (P9 ✅)*
+#### P9: Multi-client demo data seed ✅
+Status: COMPLETE
+Seed script created and verified. 5 demo clients + 2 sandbox clients with varied scenarios.
 
-### Phase 3 — Intelligence Layer Showcase
-- ⬜ **P7: DSP Evolution Panel ("Your AI has learned...")**
-  - Aggregate correction counts from 4 review tables
-  - Display active learned preferences with correction examples
-  - Reset/rollback capability
-  - **Key demo screen: shows preference learning flywheel in action**
-  - *Depends on: P6* (P9 ✅)
+#### P6: Review Queue / My Practice dashboard ✅
+Status: COMPLETE (verifying)
+Cross-client review queue showing unreviewed moments, chat messages, crisis alerts, post-crisis clients.
 
-### Phase 4 — Demo Polish
-- ⬜ **P10: Onboarding flow polish**
-  - Clinical language pass on TAM questionnaire
-  - Modality explanations (IFS, CBT, ACT, psychodynamic)
-  - UX refinements for live therapist demos
+#### P12: Client App — Intersession Coaching Experience
+Status: IN PROGRESS
+Standalone client-facing web app. Mobile-first. Separate route/layout from therapist views. Consumes existing /api/chat endpoint and dyad state machine. No real auth (demo mode, matching therapist app).
+
+PRD source: Section 3.3 (Client Onboarding Sequence), Onboarding Workflow Spec v4
+
+Sub-items (build in order):
+
+**P12a: Client app shell + state-driven views**
+Separate route with client layout (no therapist nav). Dyad state drives what the client sees:
+- invited/consent_pending: not reachable (no account yet)
+- account_created: welcome screen, "your therapist is setting things up"
+- configured/inactive: waiting screen, "your therapist will open coaching when ready"
+- active: chat interface (P12c)
+- post_crisis: hold screen, "your therapist has been notified," grounding resources
+- deactivated: paused screen with crisis resources
+Brand palette, no therapist chrome. Crisis resources visible on every non-chat state.
+
+**P12b: Client consent + onboarding flow**
+Consent/TOS screen (maps to Onboarding Spec Step 3). Explains: what CoTherapy is, what the AI does and does not do, what the therapist sees, data storage, right to withdraw. Accept creates account, decline notifies therapist. Welcome screen post-consent with crisis resources. No chat access yet.
+For demo: stub the invite link, simulate the consent gate toggle.
+
+**P12c: Intersession coaching chat UX**
+Chat interface consuming /api/chat. Session boundary enforcement:
+- Turn counter (shows remaining turns, configurable per Policy Pack usage_constraints)
+- Session timer (countdown, configurable per Policy Pack usage_constraints)
+- Sessions-per-week tracking
+- Session end state: summary of conversation, next session date (if set), crisis resources
+- Limit-hit states: "You've used your sessions for this week" / "Session complete"
+- Post-crisis mode: chat locked, supportive/grounding message, therapist notified
+Safety routing already functional in API. Client UX just needs to render the states.
+
+**P12d: Client deactivation + edge state screens**
+What the client sees when:
+- Therapist deactivates coaching (message + crisis resources)
+- Therapist reactivates (welcome back, context preserved)
+- Usage constraints change mid-period
+These are static screens driven by dyad state + Policy Pack fields. Small scope but required for end-to-end demo.
+
+#### P8: Policy Pack edit + restore UI
+Status: PROMPT WRITTEN, READY TO BUILD
+Currently read-only Config History tab. Add edit capability and version restore. Each edit writes to policy_pack_edits correction table. Feeds preference learning loop.
+
+#### P7: DSP Evolution Panel ("Your AI has learned...")
+Status: PROMPT NOT YET WRITTEN
+Shows therapists what the system has learned from their corrections. Review counts, active learned preferences, correction examples, reset button. Key investor/therapist demo screen — makes preference learning flywheel visible.
+
+#### P10: Onboarding flow polish
+Status: PROMPT NOT YET WRITTEN
+Clinical language pass on TAM questionnaire, modality explanations, UX improvements. Prep for live demos with Melanie and Jackie. Connects to P12b — therapist-side and client-side onboarding testable together.
 
 ---
 
@@ -80,7 +112,7 @@
 
 ### Security & Infrastructure
 - 🧊 Row-Level Security (RLS) policies
-- 🧊 Real authentication (replace demo auth)
+- 🧊 Real authentication (replacing demo auth for both therapist and client apps)
 - 🧊 Production error handling and logging
 - 🧊 Multi-user/multi-therapist support
 - 🧊 Real-time subscriptions for crisis alerts
